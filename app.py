@@ -8,6 +8,7 @@
 # 6. Kept all original code intact (Superset token, forms, other routes). No other changes.
 
 import os
+import redis
 import jwt
 import time
 import requests
@@ -413,6 +414,25 @@ def get_inventory():
         "max_profit": max_profit,
         "max_price": max_price
     })
+
+
+@app.route('/flush_superset_cache', methods=['POST'])
+def flush_superset_cache():
+    try:
+        # Direct connect to your Superset Redis (Docker exposes it on localhost:6379)
+        r = redis.Redis(host='localhost', port=6379,
+                        db=0, decode_responses=True)
+
+        # NUCLEAR CLEAR: Deletes EVERY cache key in ALL databases
+        r.flushall()
+
+        print("Superset Redis cache FULLY FLUSHED via flushall() — ALL STALE DATA GONE!")
+        return jsonify({'message': 'Cache flushed'}), 200
+
+    except Exception as e:
+        error_msg = str(e)
+        print("Redis flush error:", error_msg)
+        return jsonify({'error': error_msg}), 500
 
 
 '''

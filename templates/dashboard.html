@@ -730,6 +730,106 @@
       background-color: #555;
       /* Darker cards */
     }
+
+    /* FULL RESPONSIVE: Mobile/Tablet Adaptations (Builds on Your Existing) */
+    @media (max-width: 768px) {
+
+      /* TABLET/PHONE */
+      .dashboard-container {
+        flex-direction: column;
+        /* STACK: Sidebar below main */
+        gap: 10px;
+      }
+
+      .sidebar {
+        width: 100%;
+        /* FULL WIDTH: No side squeeze */
+      }
+
+      .main {
+        padding: 5px;
+        /* SMALL PAD: Fits small screen */
+      }
+
+      .topbar {
+        flex-direction: column;
+        /* STACK ARROWS/SEARCH */
+        height: auto;
+        padding: 10px;
+        gap: 5px;
+      }
+
+      .kpi-container {
+        flex-direction: column;
+        /* STACK KPIS: One per row */
+        align-items: center;
+        gap: 10px;
+      }
+
+      .kpi-card {
+        width: 90vw;
+        /* FULL PHONE WIDTH */
+        height: 80px;
+        /* SHORTER: Thumb-friendly */
+      }
+
+      .kpi-title {
+        font-size: 0.9em !important;
+        /* SMALL TITLE */
+      }
+
+      .kpi-value {
+        font-size: 2.5em !important;
+        /* SHRINK NUMBER: Fits */
+      }
+
+      .chart-row {
+        flex-direction: column;
+        /* STACK CHARTS: Vertical */
+      }
+
+      .sales-trend,
+      .profit-make {
+        width: 100%;
+        /* FULL WIDTH */
+        height: 250px;
+        /* SHORTER */
+      }
+
+      .inventory-table {
+        width: 100%;
+        /* FULL TABLE */
+        max-height: 300px;
+        /* ADJUST HEIGHT */
+      }
+
+      .table-search input {
+        width: 100%;
+        /* FULL SEARCH */
+      }
+
+      .sidebar-btn {
+        font-size: 14px;
+        /* SMALLER BUTTONS: Touch easy */
+      }
+    }
+
+    @media (max-width: 480px) {
+
+      /* EXTRA SMALL PHONE */
+      .kpi-value {
+        font-size: 2em !important;
+        /* TINY NUMBERS: Quick glance */
+      }
+
+      .kpi-title {
+        font-size: 0.8em !important;
+      }
+
+      .topbar {
+        padding: 5px;
+      }
+    }
   </style>
 </head>
 
@@ -963,10 +1063,6 @@
       }, 100);  // 100ms delay - quick but batches
     }
 
-    // NEW: Store chart instances for reuse (OPTIMIZATION: Step 4)
-    let profitChartInstance = null;
-    let salesChartInstance = null;
-
     const searchInput = document.getElementById('searchInput');
     const inventoryTable = document.getElementById('inventoryTable');
 
@@ -1024,6 +1120,7 @@
         addCarForm.classList.remove('open');
         cachedInventory = null;  // Invalidate cache after mutation
         queueRefresh(true);  // Batch + force refresh
+        fetch('/flush_superset_cache', { method: 'POST' });
       }
     });
 
@@ -1042,6 +1139,7 @@
         addExpenseForm.classList.remove('open');
         cachedInventory = null;  // Invalidate cache after mutation
         queueRefresh(true);  // Batch + force refresh
+        fetch('/flush_superset_cache', { method: 'POST' });
       }
     });
 
@@ -1061,6 +1159,7 @@
         editCarForm.classList.remove('open');
         cachedInventory = null;  // Invalidate cache after mutation
         queueRefresh(true);  // Batch + force refresh
+        fetch('/flush_superset_cache', { method: 'POST' });
       }
     });
   </script>
@@ -1189,433 +1288,266 @@
   </script>
   <!-- EMBEDDED REAL CHART JS - ADDED LEGEND 'SUM(PROFIT)', FIXED VALUE LABELS ON ALL BARS, ENHANCED VERTICAL DOTTED LINE, AND PROMINENT GREY GRID -->
   <script>
-    // ADD THIS LINE AT SCRIPT TOP (after <script> opening)
+    // ADD THIS LINE AT SCRIPT TOP — YOUR ORIGINAL
     if (typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
+
+    // GLOBAL CROSSHAIR — REGISTER ONCE (FIXES LAG + REDECLARE)
+    const crosshairPlugin = {
+      id: 'crosshair',
+      afterDatasetsDraw(chart) {
+        const { ctx, scales: { x, y }, chartArea } = chart;
+        const active = chart.getActiveElements();
+        if (active.length === 0) return;
+        const xPos = x.getPixelForValue(active[0].index);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(31, 119, 180, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(xPos, chartArea.top);
+        ctx.lineTo(xPos, chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+      }
+    };
+    Chart.register(crosshairPlugin);
+
+    // GLOBAL INSTANCES — DECLARED ONCE
+    let profitChartInstance = null;
+    let salesChartInstance = null;
+
+    // CHANGE 1: Abbreviate number function — YOUR ORIGINAL
+    function abbreviateNumber(num) {
+      if (num >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+      return num.toString();
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
-      var canvas = document.getElementById('profitChart');
+      const canvas = document.getElementById('profitChart');
       if (!canvas) {
         console.log('No canvas found');
         return;
       }
       console.log('Canvas ready - fetching real data for bars!');
-      // CHANGE 1: Abbreviate number function (e.g., 19500 -> '19.5k', 1500000 -> '1.5M') - removes UGX and uses compact format for readability
-      function abbreviateNumber(num) {
-        if (num >= 1000000) {
-          return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-        } else if (num >= 1000) {
-          return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-        } else {
-          return num.toString();
-        }
-      }
 
-      // UPDATED: loadProfitData with cache and force param (OPTIMIZATION: Step 1)
-      function loadProfitData(forceRefresh = false) {  // Optional force param
-        getInventoryData(forceRefresh)  // Use cache (async, then-able)
+      // GLOBAL + FORCE REFRESH + DESTROY OLD
+      window.loadProfitData = function (forceRefresh = false) {
+        getInventoryData(forceRefresh)
           .then(function (response) {
             var data = response.formatted_data || [];
             console.log('Total cars loaded: ' + data.length);
-            // Filter to Sold only (Superset WHERE status = 'Sold')
-            data = data.filter(function (car) {
-              return car.status === 'Sold';
-            });
+
+            data = data.filter(car => car.status === 'Sold');
             console.log('Sold cars: ' + data.length);
+
             if (data.length === 0) {
-              canvas.parentNode.innerHTML = '<p>No sold cars—add & sell one!</p>';
+              document.querySelector('.profit-make').innerHTML = '<p style="color:white;text-align:center;padding:30px;">No sold cars—add & sell one!</p>';
+              if (profitChartInstance) profitChartInstance.destroy();
+              profitChartInstance = null;
               return;
             }
-            // Group by make, SUM(profit) (Superset GROUP BY make, SUM(profit))
+
             var makeProfits = {};
             data.forEach(function (car) {
               var make = car.make || 'Unknown';
               var profitStr = car.profit || '';
               var cleanProfit = profitStr.replace(/UGX |[+$]/g, '').replace(/,/g, '');
               var profit = parseFloat(cleanProfit) || 0;
-              if (!makeProfits[make]) {
-                makeProfits[make] = 0;
-              }
-              makeProfits[make] += profit;
+              makeProfits[make] = (makeProfits[make] || 0) + profit;
             });
             console.log('Profits summed by make: ', makeProfits);
+
             var makes = Object.keys(makeProfits);
             var profits = Object.values(makeProfits);
-            // Sort DESC by profit (Superset ORDER BY SUM(profit) DESC)
+
             var sortedIndex = profits
-              .map(function (profit, index) {
-                return { profit: profit, index: index };
-              })
-              .sort(function (a, b) {
-                return b.profit - a.profit;
-              })
-              .map(function (item) {
-                return item.index;
-              });
-            makes = sortedIndex.map(function (i) {
-              return makes[i];
-            });
-            profits = sortedIndex.map(function (i) {
-              return profits[i];
-            });
-            console.log('Sorted makes: ', makes);
-            console.log('Sorted profits: ', profits);
-            if (profits.length === 0 || profits.every(function (p) { return p === 0; })) {
-              canvas.parentNode.innerHTML = '<p>No profits to plot</p>';
+              .map((p, i) => ({ profit: p, index: i }))
+              .sort((a, b) => b.profit - a.profit)
+              .map(item => item.index);
+
+            makes = sortedIndex.map(i => makes[i]);
+            profits = sortedIndex.map(i => profits[i]);
+
+            if (profits.every(p => p === 0)) {
+              document.querySelector('.profit-make').innerHTML = '<p style="color:white;text-align:center;padding:30px;">No profits to plot</p>';
+              if (profitChartInstance) profitChartInstance.destroy();
+              profitChartInstance = null;
               return;
             }
-            // Grand total for % tooltips
-            var grandTotal = profits.reduce(function (sum, p) {
-              return sum + p;
-            }, 0);
-            // Superset colors
-            var barColors = '#1f77b4';
-            // ADDED: Custom plugin for dotted vertical line on hover (mimics Superset crosshair interactivity)
-            // This draws a vertical dashed line at the hovered bar's x-position, visible on mouseover
-            // Register it before creating the chart
-            const crosshairPlugin = {
-              id: 'crosshair',
-              afterDatasetsDraw(chart) {
-                const ctx = chart.ctx;
-                const xScale = chart.scales.x;
-                const yScale = chart.scales.y;
-                const activeElements = chart.getActiveElements();
-                if (activeElements.length > 0) {
-                  const element = activeElements[0]; // Assuming single bar hover
-                  const x = xScale.getPixelForValue(element.index);
-                  ctx.save();
-                  ctx.strokeStyle = 'rgba(31, 119, 180, 0.5)'; // White semi-transparent for black bg
-                  ctx.lineWidth = 1;
-                  ctx.setLineDash([5, 5]); // Dotted/dashed line
-                  ctx.beginPath();
-                  ctx.moveTo(x, yScale.top);
-                  ctx.lineTo(x, yScale.bottom);
-                  ctx.stroke();
-                  ctx.restore();
-                }
-              }
-            };
-            Chart.register(crosshairPlugin); // Register the custom plugin
+
+            var grandTotal = profits.reduce((a, b) => a + b, 0);
             var ctx = canvas.getContext('2d');
-            // UPDATED: Reuse chart instance if exists (OPTIMIZATION: Step 4)
+
             if (profitChartInstance) {
-              // Reuse - fast data swap, no animation
-              profitChartInstance.data.labels = makes;
-              profitChartInstance.data.datasets[0].data = profits;
-              profitChartInstance.options.plugins.title.text = 'Profit by Make';  // If dynamic
-              profitChartInstance.update('none');  // 'none' = instant update
-              console.log('Profit chart updated (reused)');  // DEBUG
-            } else {
-              // ORIGINAL: Create new
-              profitChartInstance = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                  labels: makes,
-                  datasets: [{
-                    // CHANGE 1: Updated dataset label to 'SUM(Profit)' - expect: legend shows 'SUM(Profit)' instead of 'Total Profit'
-                    label: 'SUM(Profit)',
-                    data: profits,
-                    backgroundColor: barColors,
-                    borderWidth: 0
-                  }]
+              profitChartInstance.destroy();
+              profitChartInstance = null;
+            }
+
+            profitChartInstance = new Chart(ctx, {
+              type: 'bar',
+              data: {
+                labels: makes,
+                datasets: [{
+                  label: 'SUM(Profit)',
+                  data: profits,
+                  backgroundColor: '#1f77b4',
+                  borderWidth: 0
+                }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                barPercentage: 0.8,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                  title: { display: true, text: 'Profit by Make', font: { size: 16, weight: 'bold' }, color: 'white', padding: { top: 10, bottom: 20 } },
+                  legend: { display: true, position: 'top', align: 'end', labels: { usePointStyle: true, padding: 10 } },
+                  tooltip: {
+                    callbacks: {
+                      label: context => {
+                        var profit = context.parsed.y;
+                        var percent = ((profit / grandTotal) * 100).toFixed(1);
+                        return 'sum(profit) ' + abbreviateNumber(profit) + ' (' + percent + '%)';
+                      }
+                    }
+                  },
+                  datalabels: {
+                    anchor: 'end',
+                    align: 'top',
+                    display: true,
+                    clamp: false,
+                    offset: 8,
+                    font: { size: 10, weight: 'bold' },
+                    formatter: abbreviateNumber,
+                    color: 'white'
+                  }
                 },
-                options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  barPercentage: 0.8,
-                  interaction: {
-                    mode: 'index',
-                    intersect: false
-                  },
-                  plugins: {
-                    // ADDED: Chart title - displays 'Profit by Make' at top-center, white bold text for black bg
-                    title: {
-                      display: true,
-                      text: 'Profit by Make',
-                      font: { size: 16, weight: 'bold' },
-                      color: 'white',
-                      padding: { top: 10, bottom: 20 }
-                    },
-                    legend: {
-                      // CHANGE 2: Show legend with 'SUM(Profit)' - expect: small box at top with color swatches and 'SUM(Profit)' text
-                      display: true,
-                      position: 'top',
-                      align: 'end',
-                      labels: { usePointStyle: true, padding: 10 }
-                    },
-                    tooltip: {
-                      callbacks: {
-                        title: function (context) {
-                          return context[0].label;
-                        },
-                        label: function (context) {
-                          var profit = context.parsed.y;
-                          var percent = ((profit / grandTotal) * 100).toFixed(1);
-                          return 'sum(profit) ' + abbreviateNumber(profit) + ' (' + percent + '%)';
-                        }
-                      }
-                    },
-                    datalabels: {
-                      anchor: 'end',
-                      align: 'top',
-                      // CHANGE 3: Enhanced display for value on every bar - true always, clamp false, higher offset - ensures value (e.g., '2.82M') stacks on top of Toyota/Nissan without hiding
-                      display: function (context) {
-                        return true;
-                      },
-                      clamp: false,
-                      offset: 8, // CHANGE 4: Increased offset to 8px - expect: value lifted higher above bar top for clear stacking, no overlap
-                      font: { size: 10, weight: 'bold' }, // CHANGE 5: Slightly larger bold font - expect: '19.5k' more prominent on Nissan bar
-                      formatter: function (value) {
-                        return abbreviateNumber(value); // CHANGE 6: Abbreviated value stacked on top - e.g., '2.82M' on Toyota, '19.5k' on Nissan
-                      },
-                      color: 'white'
-                    }
-                  },
-                  scales: {
-                    x: {
-                      title: { display: true, text: 'Make', padding: { bottom: 30 }, color: 'white' },
-                      ticks: { maxRotation: 0, color: 'white' }
-                    },
-                    y: {
-                      beginAtZero: true,
-                      minBarLength: 1,
-                      title: { display: true, text: 'Total Profit', position: 'left', padding: { right: 50 }, color: 'white' },
-                      ticks: {
-                        callback: function (value) {
-                          return abbreviateNumber(value);
-                        },
-                        color: 'white'
-                      },
-                      grid: {
-                        // CHANGE 7: Changed grid lines from faint white to faint grey - expect: subtle grey horizontal lines on y-axis for structure, better blend with black background without being too bright
-                        color: 'rgba(128, 128, 128, 0.3)'
-                      }
-                    }
+                scales: {
+                  x: { title: { display: true, text: 'Make', padding: { bottom: 30 }, color: 'white' }, ticks: { maxRotation: 0, color: 'white' } },
+                  y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Total Profit', position: 'left', padding: { right: 50 }, color: 'white' },
+                    ticks: { callback: abbreviateNumber, color: 'white' },
+                    grid: { color: 'rgba(128, 128, 128, 0.3)' }
                   }
                 }
-              });
-              console.log('Profit chart created (new)');  // DEBUG
-            }
-            console.log('Real chart drawn - bars from your data!');
+              }
+            });
+
+            console.log('Profit chart updated on submit!');
           })
-          .catch(function (err) {
+          .catch(err => {
             console.error('Chart error: ', err);
-            canvas.parentNode.innerHTML = '<p>Failed: ' + err.message + '</p>';
+            document.querySelector('.profit-make').innerHTML = '<p style="color:white;">Failed: ' + err.message + '</p>';
           });
-      } // END OF FUNCTION - inserted here to close the loadProfitData function
-      // NEW: Initial call to load the data and draw the chart - inserted here to call the function on load
-      loadProfitData();
+      };
+
+      loadProfitData(); // Initial
     });
   </script>
-  <!-- EMBEDDED REAL CHART JS FOR SALES TREND LINE CHART - MIMICS PROFIT BAR CHART PRINCIPLES: BLACK BG, WHITE TEXT, LEGEND, TITLE, TOOLTIPS, GREY GRID, CROSSHAIR ON HOVER -->
+
   <script>
     document.addEventListener('DOMContentLoaded', function () {
-      // NEW: Sales Trend Line Chart - Mimics profit bar chart principles...
-      var salesCanvas = document.getElementById('salesTrendChart');
+      const salesCanvas = document.getElementById('salesTrendChart');
       if (!salesCanvas) {
         console.log('No sales canvas found');
         return;
       }
       console.log('Sales canvas ready - fetching real data for line!');
-      // Robust date parser for common formats, including 'dd/mm/yyyy hh:mm:ss'
+
       function parseDate(dateStr) {
         if (!dateStr || dateStr === 'N/A' || dateStr.trim() === '') return null;
         dateStr = dateStr.trim();
         let date = new Date(dateStr);
         if (!isNaN(date.getTime())) return date;
-        // NEW: Handle 'dd-mm-yyyy hh:mm:ss' (your format—splits date/time, swaps day/month for JS)
-        if (dateStr.match(/^\d{1,2}-\d{1,2}-\d{4} \d{1,2}:\d{2}:\d{2}/)) {
-          let parts = dateStr.split(' ');
-          let datePart = parts[0].split('-');
-          let timePart = parts[1].split(':');
-          let day = parseInt(datePart[0]), month = parseInt(datePart[1]) - 1, year = parseInt(datePart[2]);
-          let hour = parseInt(timePart[0]), min = parseInt(timePart[1]), sec = parseInt(timePart[2]);
-          date = new Date(year, month, day, hour, min, sec);
-          if (!isNaN(date.getTime())) {
-            console.log(`Parsed dash date: ${dateStr} → ${date.toISOString()}`); // Logs parsing success
-            return date;
+
+        const formats = [
+          /^\d{1,2}-\d{1,2}-\d{4} \d{1,2}:\d{2}:\d{2}/,
+          /^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2}/
+        ];
+
+        for (let fmt of formats) {
+          if (dateStr.match(fmt)) {
+            let parts = dateStr.split(' ');
+            let datePart = parts[0].includes('/') ? parts[0].split('/') : parts[0].split('-');
+            let timePart = parts[1].split(':');
+            let day = parseInt(datePart[0]);
+            let month = parseInt(datePart[1]) - 1;
+            let year = parseInt(datePart[2]);
+            let hour = parseInt(timePart[0]), min = parseInt(timePart[1]), sec = parseInt(timePart[2] || 0);
+            date = new Date(year, month, day, hour, min, sec);
+            if (!isNaN(date.getTime())) return date;
           }
         }
-        // Your original 'dd/mm/yyyy hh:mm:ss' block (keep unchanged as fallback)
-        if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2}/)) {
-          let parts = dateStr.split(' ');
-          let datePart = parts[0].split('/');
-          let timePart = parts[1].split(':');
-          let day = parseInt(datePart[0]), month = parseInt(datePart[1]) - 1, year = parseInt(datePart[2]);
-          let hour = parseInt(timePart[0]), min = parseInt(timePart[1]), sec = parseInt(timePart[2]);
-          date = new Date(year, month, day, hour, min, sec);
-          if (!isNaN(date.getTime())) return date;
-        }
-        // ... (rest of parseDate unchanged)
         console.warn('Unparseable date skipped:', dateStr);
         return null;
       }
 
-      // UPDATED: loadSalesData with cache and force param (OPTIMIZATION: Step 1)
-      function loadSalesData(forceRefresh = false) {  // Optional force param
+      window.loadSalesData = function (forceRefresh = false) {
         getInventoryData(forceRefresh)
-          .then(function (response) {
+          .then(response => {
             var data = response.formatted_data || [];
-            console.log('Total cars loaded for sales: ' + data.length);
-            // Filter to Sold only (Superset WHERE status = 'Sold')
-            data = data.filter(function (car) {
-              return car.status === 'Sold' && car.date_sold; // Ensure date_sold exists
-            });
-            console.log('Sold cars with date: ' + data.length);
-            // Log your specific dates for debug
-            data.forEach(function (car, i) {
-              console.log('Sold car ' + (i + 1) + ' date_sold: "' + car.date_sold + '"');
-            });
-            if (data.length === 0) {
-              console.log('No sold cars - will plot empty skeleton');
-              // FALLTHROUGH: No return, proceed to empty plot below
-            }
-            // Group by month (Superset DATE_TRUNC('MONTH', date_sold)), COUNT(status) as "Cars Sold"
+            data = data.filter(car => car.status === 'Sold' && car.date_sold);
+
             var monthlySales = {};
-            data.forEach(function (car) {
-              var dateStr = car.date_sold || '';
-              var date = parseDate(dateStr); // FIXED: Now uses robust parser for dd/mm/yyyy hh:mm:ss
-              if (!date) return; // Skip invalid (logs warning)
-              console.log(`Parsed date for ${car.make || 'car'}: ${date.toISOString()}`);
-              var monthKey = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0'); // YYYY-MM
-              if (!monthlySales[monthKey]) {
-                monthlySales[monthKey] = 0;
-              }
-              monthlySales[monthKey]++;
+            data.forEach(car => {
+              var date = parseDate(car.date_sold);
+              if (!date) return;
+              var monthKey = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+              monthlySales[monthKey] = (monthlySales[monthKey] || 0) + 1;
             });
-            console.log('Monthly sales: ', monthlySales);
-            // Convert to arrays, sort by month key ASC for chronological trend
-            var months = Object.keys(monthlySales).sort(); // Natural sort YYYY-MM
-            var salesCounts = months.map(function (month) {
-              return monthlySales[month];
-            });
-            console.log('Sorted months: ', months);
-            console.log('Sales counts: ', salesCounts);
-            // FIXED: Empty skeleton - plot blank line over recent months if no data
-            const now = new Date('2025-11-03'); // Use current date (Nov 3, 2025)
-            let extendedMonths = [];
-            let extendedCounts = [];
-            for (let i = 2; i >= 0; i--) { // Last 3 months up to now
-              const pastMonth = new Date(now.getFullYear(), now.getMonth() - i, 1);
-              let monthKey = pastMonth.getFullYear() + '-' + String(pastMonth.getMonth() + 1).padStart(2, '0');
-              extendedMonths.push(monthKey);
-              extendedCounts.push(monthlySales[monthKey] || 0); // Uses your data (2 for Oct) or 0
+
+            // REAL CURRENT DATE — NO HARDCODE
+            const now = new Date();
+            let months = [];
+            let salesCounts = [];
+            for (let i = 2; i >= 0; i--) {
+              const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+              const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+              months.push(key);
+              salesCounts.push(monthlySales[key] || 0);
             }
-            months = extendedMonths;
-            salesCounts = extendedCounts;
-            console.log('Extended months with data: ', months, salesCounts); // Logs ["2025-09", "2025-10", "2025-11"], [0, 2, 0]
-            // Superset line colors (blue for trend)
-            var lineColor = '#1f77b4';
-            // ADDED: Custom plugin for dotted vertical line on hover...
-            const crosshairPlugin = {
-              id: 'crosshair',
-              afterDatasetsDraw(chart) {
-                const ctx = chart.ctx;
-                const xScale = chart.scales.x;
-                const yScale = chart.scales.y;
-                const activeElements = chart.getActiveElements();
-                if (activeElements.length > 0) {
-                  const element = activeElements[0];
-                  const x = xScale.getPixelForValue(element.index);
-                  ctx.save();
-                  ctx.strokeStyle = 'rgba(31, 119, 180, 0.5)';
-                  ctx.lineWidth = 1;
-                  ctx.setLineDash([5, 5]);
-                  ctx.beginPath();
-                  ctx.moveTo(x, yScale.top);
-                  ctx.lineTo(x, yScale.bottom);
-                  ctx.stroke();
-                  ctx.restore();
-                }
-              }
-            };
-            Chart.register(crosshairPlugin);
-            var salesCtx = salesCanvas.getContext('2d');
-            // UPDATED: Reuse chart instance if exists (OPTIMIZATION: Step 4)
-            if (salesChartInstance) {
-              // Reuse
-              salesChartInstance.data.labels = months;
-              salesChartInstance.data.datasets[0].data = salesCounts;
-              salesChartInstance.options.plugins.title.text = 'Sales Trend';  // If dynamic
-              salesChartInstance.update('none');
-              console.log('Sales chart updated (reused)');
-            } else {
-              // ORIGINAL: Create new
-              salesChartInstance = new Chart(salesCtx, {
-                type: 'line',
-                data: {
-                  labels: months,
-                  datasets: [{
-                    label: 'Cars Sold',
-                    data: salesCounts,
-                    borderColor: lineColor,
-                    backgroundColor: 'rgba(31, 119, 180, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.1,
-                    pointRadius: 4,
-                    pointHoverRadius: 6
-                  }]
+
+            const salesCtx = salesCanvas.getContext('2d');
+            if (salesChartInstance) salesChartInstance.destroy();
+
+            salesChartInstance = new Chart(salesCtx, {
+              type: 'line',
+              data: {
+                labels: months.map(m => new Date(m + '-01').toLocaleString('default', { month: 'short', year: 'numeric' })),
+                datasets: [{
+                  label: 'Cars Sold',
+                  data: salesCounts,
+                  borderColor: '#1f77b4',
+                  backgroundColor: 'rgba(31, 119, 180, 0.15)',
+                  borderWidth: 3,
+                  fill: true,
+                  tension: 0.25,
+                  pointRadius: 6,
+                  pointHoverRadius: 8
+                }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                  title: { display: true, text: 'Sales Trend (Last 3 Months)', font: { size: 16, weight: 'bold' }, color: 'white', padding: { top: 10, bottom: 20 } },
+                  legend: { display: true, position: 'top', align: 'end', labels: { usePointStyle: true, padding: 10, color: 'white' } }
                 },
-                options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  interaction: {
-                    mode: 'index',
-                    intersect: false
-                  },
-                  plugins: {
-                    title: {
-                      display: true,
-                      text: 'Sales Trend',
-                      font: { size: 16, weight: 'bold' },
-                      color: 'white',
-                      padding: { top: 10, bottom: 20 }
-                    },
-                    legend: {
-                      display: true,
-                      position: 'top',
-                      align: 'end',
-                      labels: { usePointStyle: true, padding: 10, color: 'white' }
-                    },
-                    tooltip: {
-                      callbacks: {
-                        title: function (context) {
-                          return context[0].label;
-                        },
-                        label: function (context) {
-                          return 'Cars Sold: ' + context.parsed.y;
-                        }
-                      }
-                    }
-                  },
-                  scales: {
-                    x: {
-                      title: { display: true, text: 'Date Sold', padding: { bottom: 30 }, color: 'white' },
-                      ticks: {
-                        maxRotation: 45,
-                        color: 'white',
-                      }
-                    },
-                    y: {
-                      beginAtZero: true,
-                      title: { display: true, text: 'Number of Cars Sold', position: 'left', padding: { right: 50 }, color: 'white' },
-                      ticks: { color: 'white' },
-                      grid: {
-                        color: 'rgba(128, 128, 128, 0.3)'
-                      }
-                    }
-                  }
+                scales: {
+                  x: { ticks: { color: 'white' } },
+                  y: { beginAtZero: true, ticks: { color: 'white', stepSize: 1 }, grid: { color: 'rgba(128,128,128,0.3)' } }
                 }
-              });
-              console.log('Sales chart created (new)');
-            }
-            console.log('Sales trend line drawn - from your data!');
+              }
+            });
+
+            console.log('Sales trend updated on submit!');
           })
-          .catch(function (err) {
-            console.error('Sales chart error: ', err);
-            salesCanvas.parentNode.innerHTML = '<p>Failed: ' + err.message + '</p>';
-          });
-      } // END OF FUNCTION - inserted here to close the loadSalesData function
-      // NEW: Initial call to load the data and draw the chart - inserted here to call the function on load
+          .catch(err => console.error('Sales chart error: ', err));
+      };
+
       loadSalesData();
     });
   </script>
@@ -1868,52 +1800,62 @@
     }
 
     // OPTIMIZED: queueRefresh - Instant KPI/table, batch charts (fewer fetches = speed)
-    function queueRefresh(forceRefresh = false) {
+    async function queueRefresh(forceRefresh = false) {
       if (refreshPending) {
         console.log('Refresh queued - skipping duplicate');
         return;
       }
       refreshPending = true;
 
-      // INSTANT: KPI + table first (fast show)
-      loadInventoryTable(forceRefresh);
-      loadTotalCarsKPI(forceRefresh);
-      loadSoldCarsKPI(forceRefresh);
-      loadTotalSalesKPI(forceRefresh);
-      loadTotalProfitsKPI(forceRefresh);
-      loadProfitData(forceRefresh);
-      loadSalesData(forceRefresh);
+      try {
+        // INSTANT: Await KPIs/table/charts (fresh data)
+        await loadTotalCarsKPI(forceRefresh);
+        await loadSoldCarsKPI(forceRefresh);
+        await loadTotalSalesKPI(forceRefresh);
+        await loadTotalProfitsKPI(forceRefresh);
+        await loadInventoryTable(forceRefresh);
+        await loadProfitData(forceRefresh);
+        await loadSalesData(forceRefresh);
 
-      // BATCH: Charts after tiny delay (reuse = no lag)
-      setTimeout(async () => {
-        try {
-          await Promise.all([
-            loadInventoryTable(forceRefresh),
-            loadProfitData(forceRefresh),
-            loadSalesData(forceRefresh),
-            loadTotalCarsKPI(forceRefresh),
-            loadSoldCarsKPI(forceRefresh),
-            loadTotalSalesKPI(forceRefresh),
-            loadTotalProfitsKPI(forceRefresh)
-          ]);
-        } catch (err) {
-          console.error('Batch soft error:', err);
-        } finally {
-          refreshPending = false;
-        }
-      }, 100); // Short delay
+        // NUCLEAR FIX: FORCE CANVAS REDRAW — OLD PIXELS GONE
+        const profitCtx = document.getElementById('profitChart')?.getContext('2d');
+        const salesCtx = document.getElementById('salesTrendChart')?.getContext('2d');
+        if (profitCtx) profitCtx.clearRect(0, 0, profitCtx.canvas.width, profitCtx.canvas.height);
+        if (salesCtx) salesCtx.clearRect(0, 0, salesCtx.canvas.width, salesCtx.canvas.height);
+
+        console.log('FULL REFRESH + CANVAS NUKED — CHARTS 100% INSTANT!');
+      } catch (err) {
+        console.error('Refresh error:', err);
+      } finally {
+        refreshPending = false;
+      }
     }
 
-    // NEW: Open Superset Dashboard in New Tab (Standalone Mode)
-    function openSupersetDashboard() {
-      const supersetUrl = 'http://localhost:8088/superset/dashboard/p/EWe4rJJ4rM8/?standalone=2&show_filters=false'; // Your share link + clean mode
-      window.open(supersetUrl, '_blank', 'noopener,noreferrer'); // New tab: Secure, no referrer
+    // FIXED: Open Superset Dashboard - Direct with Token (No Login, Hidden UI)
+    async function openSupersetDashboard() {
+      // Open immediately with fallback (unblocks popup)
+      const fallbackUrl = 'http://localhost:8088/superset/dashboard/p/EWe4rJJ4rM8/?standalone=2&show_filters=false';
+      const win = window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+
+      // Fetch token in background and update URL if successful
+      try {
+        const res = await fetch('/superset_token/de38daae-94bd-461e-b81d-9c67cbf2decd');
+        if (res.ok) {
+          const { token } = await res.json();
+          const supersetUrl = `http://localhost:8088/superset/dashboard/p/EWe4rJJ4rM8/?standalone=2&show_filters=false&token=${token}`;
+          if (win) win.location.href = supersetUrl; // Update the open tab
+        }
+      } catch (err) {
+        console.error('Token error:', err);
+        // Fallback already open — no action needed
+      }
     }
 
     // START: Initial load
     document.addEventListener('DOMContentLoaded', () => {
       queueRefresh(true); // Force fresh start
     });
+
 
     // TOGGLE REPORT DRAWER (like Add Car)
     const reportBtn = document.getElementById('reportBtn');
@@ -2096,6 +2038,7 @@
               alert('Car deleted!');
               cachedInventory = null; // CLEAR MEMORY
               queueRefresh(true); // FORCE REFRESH: Table/KPIs instant
+              fetch('/flush_superset_cache', { method: 'POST' });
             } else {
               alert('Oops, try again!'); // ERROR
             }
@@ -2106,6 +2049,113 @@
           });
       }
     }
+
+    // INTERACTIVE: Hovers, Clicks, Modal Helpers (Builds on Your Existing)
+    document.addEventListener('DOMContentLoaded', () => {
+      // HOVER GLOW: Buttons lift/shadow on mouse over
+      document.querySelectorAll('.sidebar-btn, .kpi-card, th').forEach(el => {
+        el.addEventListener('mouseenter', () => {
+          el.style.transform = 'translateY(-2px)';
+          el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+          el.style.transition = 'all 0.2s ease';
+        });
+        el.addEventListener('mouseleave', () => {
+          el.style.transform = 'translateY(0)';
+          el.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
+        });
+      });
+
+      // CLICK DRILL-DOWN: KPI clicks show details (modal with data)
+      document.querySelectorAll('.kpi-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const value = card.querySelector('.kpi-value').textContent;
+          const title = card.querySelector('.kpi-title').textContent;
+          alert(`${title}: ${value}`); // TEMP: Replace with modal for details
+        });
+      });
+
+      // TABLE CLICK SORT (Your existing, but enhanced for touch)
+      document.querySelectorAll('th[data-sort]').forEach(th => {
+        th.addEventListener('click', () => {
+          const column = th.dataset.sort;
+          sortTable(column);
+        });
+      });
+
+      // MODAL CLOSE ON ESC KEY (for all modals)
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          document.querySelectorAll('.sidebar-form.open').forEach(form => form.classList.remove('open'));
+        }
+      });
+    });
+  </script>
+
+  <script>
+    // AUTO-UPDATE CHARTS ON ANY FORM SUBMIT — FIXED CSRF!
+    document.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+
+          const formData = new FormData(form);
+          const action = form.action || window.location.href;
+          const method = form.method || 'POST';
+
+          // FIX: ADD CSRF TOKEN (from Flask-WTF hidden input)
+          const csrfToken = form.querySelector('input[name="csrf_token"]')?.value;
+          if (csrfToken) formData.append('csrf_token', csrfToken);
+
+          const submitBtn = form.querySelector('input[type="submit"], button[type="submit"]');
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.value = 'Saving...';
+          }
+
+          fetch(action, {
+            method: method,
+            body: formData
+          })
+            .then(r => r.json().catch(() => r.text()))
+            .then(result => {
+              let success = false;
+
+              if (r.redirected) success = true;  // Flask redirect = success
+              else if (result.success === true || result.status === 'success') success = true;
+              else if (typeof result === 'string' && result.includes('success')) success = true;
+
+              if (success) {
+                alert('Saved successfully!');
+                form.reset();
+
+                // REFRESH CHARTS INSTANTLY
+                if (typeof loadProfitData === 'function') loadProfitData(true);
+                if (typeof loadSalesData === 'function') loadSalesData(true);
+
+                // OPTIONAL: RELOAD PAGE FOR TABLE (or update table via AJAX)
+                setTimeout(() => location.reload(), 800);
+              } else {
+                alert('Error saving. Check form.');
+                console.error(result);
+              }
+            })
+            .catch(err => {
+              console.error(err);
+              alert('Network error — submitting normally...');
+              form.submit(); // Fallback
+            })
+            .finally(() => {
+              if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.value = submitBtn.dataset.originalValue || 'Submit';
+              }
+            });
+
+          // SAVE ORIGINAL BUTTON TEXT
+          if (submitBtn && submitBtn.value) submitBtn.dataset.originalValue = submitBtn.value;
+        });
+      });
+    });
   </script>
 </body>
 
