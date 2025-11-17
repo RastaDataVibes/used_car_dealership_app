@@ -43,7 +43,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 
 # Change password to yours
-def get_admin_token(superset_url="http://localhost:8088", username="zaga", password="zagadat"):
+def get_admin_token(superset_url="https://dash-y8xp.onrender.com/superset", username="zaga", password="zagadat"):
     session = requests.Session()
     session.get(superset_url)  # Set cookie
     csrf_url = f"{superset_url}/csrf_token/"
@@ -79,7 +79,7 @@ def manual_guest_token(resources):
         "aud": "superset",
         "type": "guest"
     }
-    secret = "my-very-strong-secret-12345"  # From config.py
+    secret = os.environ.get('SUPERSET_SECRET_KEY', 'my-very-strong-secret-12345')
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
@@ -415,26 +415,34 @@ def get_inventory():
         "max_price": max_price
     })
 
-
 @app.route('/flush_superset_cache', methods=['POST'])
 def flush_superset_cache():
+    # RECOMMENDATION: Add env var toggle—set FLUSH_CACHE_ENABLED=false on Render to disable (avoids Redis connection errors in prod).
+    if os.environ.get('FLUSH_CACHE_ENABLED', 'true').lower() == 'false':
+        # PROD SKIP: No-op; log reminder for manual flush (e.g., edit/save dashboard in Superset UI).
+        print("Cache flush SKIPPED (prod mode). Manually refresh dashboard in Superset UI for fresh data.")
+        return jsonify({'message': 'Cache flush disabled in prod—refresh your Superset dashboard manually!'}), 200
+    
     try:
         # Direct connect to your Superset Redis (Docker exposes it on localhost:6379)
+        # NOTE: This will not work on Render deployment as Redis is internal/not exposed on localhost.
+        #       For production flush, consider using Superset's admin API if available, or manual cache refresh in Superset UI.
+        #       Leaving as-is for local dev compatibility; disable or update host/port for Render if Redis is exposed.
+        # RECOMMENDATION: If you expose Redis externally (advanced, via Render add-on), swap 'localhost' for your Redis URL here.
         r = redis.Redis(host='localhost', port=6379,
                         db=0, decode_responses=True)
-
         # NUCLEAR CLEAR: Deletes EVERY cache key in ALL databases
         r.flushall()
-
         print("Superset Redis cache FULLY FLUSHED via flushall() — ALL STALE DATA GONE!")
         return jsonify({'message': 'Cache flushed'}), 200
-
     except Exception as e:
         error_msg = str(e)
+        # RECOMMENDATION: Enhanced handling—soft-fail on connection errors (common in prod) with a helpful message; hard-fail only on other issues.
+        if 'localhost' in error_msg.lower() or 'Connection' in error_msg:
+            print(f"Redis connection failed (expected in prod): {error_msg}. Use manual UI flush.")
+            return jsonify({'error': 'Redis unavailable (prod mode)—refresh dashboard manually!'}), 200  # Soft 200 to keep JS calls non-breaking
         print("Redis flush error:", error_msg)
         return jsonify({'error': error_msg}), 500
-
-
 '''
 @app.route("/superset_token/<dashboard_id>")
 def superset_token(dashboard_id):
