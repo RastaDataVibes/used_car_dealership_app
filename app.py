@@ -66,7 +66,7 @@ def get_admin_token(superset_url="https://dash-y8xp.onrender.com/superset", user
         f"Login failed: {response.status_code} - {response.text[:100]}")
 
 
-ADMIN_TOKEN = get_admin_token()  # Gets it on startup
+#ADMIN_TOKEN = get_admin_token()  # Gets it on startup
 
 
 def manual_guest_token(resources):
