@@ -1834,15 +1834,15 @@
     // FIXED: Open Superset Dashboard - Direct with Token (No Login, Hidden UI)
     async function openSupersetDashboard() {
       // Open immediately with fallback (unblocks popup)
-      const fallbackUrl = 'http://localhost:8088/superset/dashboard/p/EWe4rJJ4rM8/?standalone=2&show_filters=false';
+      const fallbackUrl = 'https://dash-y8xp.onrender.com/superset/dashboard/1/?standalone=true&show_filters=false&native_filters_key=UCkVgPchSNg';
       const win = window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
 
       // Fetch token in background and update URL if successful
       try {
-        const res = await fetch('/superset_token/de38daae-94bd-461e-b81d-9c67cbf2decd');
+        const res = await fetch('/superset_token/1');
         if (res.ok) {
           const { token } = await res.json();
-          const supersetUrl = `http://localhost:8088/superset/dashboard/p/EWe4rJJ4rM8/?standalone=2&show_filters=false&token=${token}`;
+          const supersetUrl = `https://dash-y8xp.onrender.com/superset/dashboard/1/?standalone=true&show_filters=false&token=${token}&native_filters_key=UCkVgPchSNg`;
           if (win) win.location.href = supersetUrl; // Update the open tab
         }
       } catch (err) {
