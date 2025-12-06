@@ -26,7 +26,18 @@ from extensions import db
 from datetime import datetime, timezone, date
 from dashboard_view import dashboard_bp
 # Tweak: Uncommented/ensured import for models
-from models import Inventory, Expense
+from models import Inventory, Expense, Payment
+
+def clean_float(value):
+    """Convert string like '2,500,000' or '2500000.50' to float safely"""
+    if value is None or value == '':
+        return 0.0
+    # Remove commas, then convert
+    cleaned = str(value).replace(',', '')
+    try:
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return 0.0
 
 # ------------------------
 # Initialize Flask app
@@ -144,9 +155,14 @@ class InventoryForm(FlaskForm):
     make = StringField("Make", validators=[Optional()])
     model = StringField("Model", validators=[Optional()])
     year = IntegerField("Year", validators=[Optional()])
+    registration_number = StringField(
+        "Registration Number (e.g. UBK 123X)", validators=[Optional()])
+    sourced_from = StringField(
+        "Sourced From (e.g. John K, Copart)", validators=[Optional()])
     purchase_price = FloatField("Purchase Price", validators=[Optional()])
-    selling_price = FloatField("Selling Price", validators=[Optional()])
     mileage = IntegerField("Mileage (km)", validators=[Optional()])
+    notes = StringField("Notes (optional)", validators=[Optional()],
+                        render_kw={"placeholder": "e.g. Dent on door, clean title, spare key missing"})
     photo = FileField("Vehicle Photo", validators=[
                       Optional(), FileAllowed(['jpg', 'jpeg', 'png'], 'Images only!')])
     submit = SubmitField("Add Vehicle")
@@ -157,6 +173,18 @@ class ExpenseForm(FlaskForm):
     expense_category = StringField('Expense Category', validators=[Optional()])
     expense_amount = FloatField('Expense Amount', validators=[Optional()])
     submit = SubmitField('Add Expense')
+
+class RecordSaleForm(FlaskForm):
+    vehicle_id = SelectField(
+        'Vehicle', coerce=int, validators=[Optional()])
+    sold_to = StringField('Sold To (Name & Phone)',
+                          validators=[Optional()])
+    fixed_selling_price = FloatField(
+        'Fixed Selling Price', validators=[Optional()])
+    add_installment = FloatField(
+        'Add Installment', validators=[Optional()])
+    notes = StringField('Notes (optional)', validators=[Optional()])
+    submit = SubmitField('Record Sale')
 
 # ------------------------
 # Routes
@@ -187,10 +215,15 @@ def get_vehicle(vehicle_id):
         'make': vehicle.make,
         'model': vehicle.model,
         'year': vehicle.year,
+        'registration_number': vehicle.registration_number,
+        'sourced_from': vehicle.sourced_from,
         'purchase_price': vehicle.purchase_price,
-        'selling_price': vehicle.selling_price,
+        'status': vehicle.status or 'Available',
+        'sold_to': vehicle.sold_to or '',
+        'fixed_selling_price': vehicle.fixed_selling_price or '',
         'mileage': vehicle.mileage
     })
+
 
 
 @app.route('/add_vehicle_ajax', methods=['POST'])
@@ -198,9 +231,11 @@ def add_vehicle_ajax():
     make = request.form.get('make') or None
     model = request.form.get('model') or None
     year = request.form.get('year', type=int) or None
-    purchase_price = request.form.get('purchase_price', type=float) or None
-    selling_price = request.form.get('selling_price', type=float) or None
-    mileage = request.form.get('mileage', type=int) or None
+    purchase_price = clean_float(request.form.get('purchase_price'))
+    registration_number = request.form.get('registration_number') or None
+    sourced_from = request.form.get('sourced_from') or None
+    mileage = clean_float(request.form.get('mileage'))
+    notes = request.form.get('notes') or None
 
     photo_file = request.files.get('photo')
     filename = None
@@ -213,24 +248,25 @@ def add_vehicle_ajax():
         model=model,
         year=year,
         purchase_price=purchase_price,
-        selling_price=selling_price,
+        registration_number=registration_number,
+        sourced_from=sourced_from,
         mileage=mileage,
+        notes=notes,
         photo_filename=filename,
         date_added=datetime.now(timezone.utc)
     )
     db.session.add(vehicle)
     db.session.commit()
-    # Tweak: Call helpers to ensure initial expenses (0) and profit calc
-    vehicle.update_expenses_total()
-    vehicle.calculate_profit()
+
     return jsonify({'message': f'Vehicle added successfully!', 'vehicle_id': vehicle.id})
+
 
 
 @app.route('/add_expense_ajax', methods=['POST'])
 def add_expense_ajax():
     vehicle_id = request.form.get('vehicle_id', type=int)
     category = request.form.get('expense_category') or None
-    amount = request.form.get('expense_amount', type=float) or 0.0
+    amount = clean_float(request.form.get('expense_amount'))
 
     expense = Expense(vehicle_id=vehicle_id,
                       expense_category=category, expense_amount=amount)
@@ -242,9 +278,7 @@ def add_expense_ajax():
     vehicle = Inventory.query.get(vehicle_id)
     vehicle.expenses_amount = total
     db.session.commit()
-    # Tweak: Call helpers to refresh and recalc
-    vehicle.update_expenses_total()
-    vehicle.calculate_profit()
+
     return jsonify({'message': 'Expense added and total updated!'})
 
 
@@ -258,11 +292,15 @@ def edit_vehicle_ajax():
     vehicle.make = request.form.get('make') or vehicle.make
     vehicle.model = request.form.get('model') or vehicle.model
     vehicle.year = request.form.get('year', type=int) or vehicle.year
-    vehicle.purchase_price = request.form.get(
-        'purchase_price', type=float) or vehicle.purchase_price
-    vehicle.selling_price = request.form.get(
-        'selling_price', type=float) or vehicle.selling_price
-    vehicle.mileage = request.form.get('mileage', type=int) or vehicle.mileage
+    vehicle.purchase_price = clean_float(request.form.get(
+        'purchase_price')) or vehicle.purchase_price
+    vehicle.registration_number = request.form.get(
+        'registration_number') or vehicle.registration_number
+    vehicle.sourced_from = request.form.get(
+        'sourced_from') or vehicle.sourced_from
+    vehicle.mileage = clean_float(
+        request.form.get('mileage')) or vehicle.mileage
+    vehicle.notes = request.form.get('notes') or vehicle.notes
 
     photo_file = request.files.get('photo')
     if photo_file:
@@ -270,23 +308,67 @@ def edit_vehicle_ajax():
         photo_file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         vehicle.photo_filename = filename
 
-    if vehicle.selling_price:
-        vehicle.status = 'Sold'
-        if not vehicle.date_sold:
-            vehicle.date_sold = datetime.now(timezone.utc)
-    else:
-        vehicle.status = 'Available'
-        vehicle.date_sold = None
-
-    if vehicle.selling_price and vehicle.purchase_price:
-        vehicle.profit = vehicle.selling_price - \
-            (vehicle.purchase_price + (vehicle.expenses_amount or 0))
-
     db.session.commit()
-    # Tweak: Call helpers to refresh expenses and recalc profit
-    vehicle.update_expenses_total()
-    vehicle.calculate_profit()
+
     return jsonify({'message': f'Vehicle updated successfully!'})
+
+@app.route('/record_sale_ajax', methods=['POST'])
+def record_sale_ajax():
+    vehicle_id = request.form.get('vehicle_id', type=int)
+    reg_number = request.form.get('registration_number', '').strip().upper()
+
+    # Resolve vehicle: prefer ID, fallback to registration number
+    if vehicle_id:
+        vehicle = Inventory.query.get(vehicle_id)
+    elif reg_number:
+        vehicle = Inventory.query.filter(
+            db.func.upper(Inventory.registration_number) == reg_number
+        ).first()
+    else:
+        return jsonify({'success': False, 'message': 'Please select or enter a vehicle'}), 400
+
+    if not vehicle:
+        return jsonify({'success': False, 'message': 'Vehicle not found!'}), 404
+
+    # Rest of your logic (same as before)
+    sold_to = request.form.get('sold_to', '').strip()
+    fixed_selling_price = clean_float(request.form.get('fixed_selling_price'))
+    add_installment = clean_float(request.form.get('add_installment'))
+    notes = request.form.get('notes', '').strip()
+
+    was_first_sale = vehicle.status == 'Available'
+
+    if was_first_sale:
+        vehicle.status = 'Sold'
+        if sold_to:
+            vehicle.sold_to = sold_to
+        if fixed_selling_price is not None and fixed_selling_price > 0:
+            vehicle.fixed_selling_price = fixed_selling_price
+        vehicle.sale_date = date.today()
+
+        total_cost = (vehicle.purchase_price or 0) + \
+            (vehicle.expenses_amount or 0)
+        if fixed_selling_price is not None and fixed_selling_price > 0:
+            vehicle.booked_profit = fixed_selling_price - total_cost
+
+    # Record installment
+    next_number = Payment.query.filter_by(vehicle_id=vehicle.id).count() + 1
+    payment = Payment(
+        vehicle_id=vehicle.id,
+        amount=add_installment,
+        category=f"Installment #{next_number}",
+        notes=notes or None
+    )
+    db.session.add(payment)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message': f'Installment #{next_number} recorded for {vehicle.registration_number or "vehicle"}!',
+        'vehicle_id': vehicle.id,
+        'registration_number': vehicle.registration_number,
+        'installment_number': next_number
+    })
 
 
 @app.route('/delete_vehicle/<int:car_id>', methods=['DELETE'])
@@ -298,6 +380,7 @@ def delete_vehicle(car_id):
 
         # Delete related expenses first (if any)
         Expense.query.filter_by(vehicle_id=car_id).delete()
+        Payment.query.filter_by(vehicle_id=car_id).delete()
 
         db.session.delete(vehicle)  # Delete car
         db.session.commit()
@@ -322,8 +405,6 @@ def superset_token(dashboard_id):
 
 @app.route('/api/inventory', methods=['GET'])
 def get_inventory():
-    print("✅ /api/inventory route reached")
-
     vehicles = Inventory.query.all()
     # Shows if data fetched
     print(f"DEBUG: Raw query found {len(vehicles)} vehicles")
@@ -355,12 +436,12 @@ def get_inventory():
                     date_added = v.date_added.strftime("%d-%m-%Y %H:%M:%S")
                 except:
                     date_added = str(v.date_added)[:19] if v.date_added else ""
-            date_sold = ""
-            if v.date_sold:
+            sale_date = ""
+            if v.sale_date:
                 try:
-                    date_sold = v.date_sold.strftime("%d-%m-%Y %H:%M:%S")
+                    sale_date = v.sale_date.strftime("%d-%m-%Y %H:%M:%S")
                 except:
-                    date_sold = str(v.date_sold)[:19] if v.date_sold else ""
+                    sale_date = str(v.sale_date)[:19] if v.sale_date else ""
 
             # Safe numerics (handles NULL)
             def format_numeric(val):
@@ -372,16 +453,21 @@ def get_inventory():
                 except:
                     return f"${val or 0:.2f}"
 
-            purchase_price_str = format_numeric(v.purchase_price)
-            expenses_amount_str = format_numeric(v.expenses_amount)
-            selling_price_str = format_numeric(v.selling_price)
-            profit_str = format_numeric(v.profit)
+            purchase_price = format_numeric(v.purchase_price)
+            expenses_amount = format_numeric(v.expenses_amount)
+            total_paid = db.session.query(db.func.sum(Payment.amount)).filter_by(
+                vehicle_id=v.id).scalar() or 0
+            balance_due = (v.fixed_selling_price or 0) - total_paid
 
+            cost = (v.purchase_price or 0) + (v.expenses_amount or 0)
+            realized_profit = total_paid - cost
             # Safe max
-            if v.profit is not None:
-                profits.append(float(v.profit) if v.profit else 0)
-            if v.selling_price is not None:
-                prices.append(float(v.selling_price) if v.selling_price else 0)
+            if v.booked_profit is not None:
+                profits.append(float(v.booked_profit)
+                               if v.booked_profit else 0)
+            if v.fixed_selling_price is not None:
+                prices.append(float(v.fixed_selling_price)
+                              if v.fixed_selling_price else 0)
 
             formatted_data.append({
                 "id": v.id,
@@ -389,13 +475,20 @@ def get_inventory():
                 "make": v.make or '',
                 "model": v.model or '',
                 "year": v.year or '',
+                "registration_number": v.registration_number or '',
                 "mileage": v.mileage or '',
+                "sourced_from": v.sourced_from or '',
+                "sold_to": v.sold_to or '',
+                "notes": v.notes or '',
                 "status": v.status or '',
-                "purchase_price": purchase_price_str,
-                "expenses_amount": expenses_amount_str,
-                "selling_price": selling_price_str,
-                "profit": profit_str,
-                "date_sold": date_sold,
+                "purchase_price": format_numeric(v.purchase_price),
+                "expenses_amount": format_numeric(v.expenses_amount),
+                "fixed_selling_price": format_numeric(v.fixed_selling_price),
+                "total_paid": format_numeric(total_paid),
+                "balance_due": format_numeric(balance_due),
+                "booked_profit": format_numeric(v.booked_profit),
+                "realized_profit": format_numeric(realized_profit),
+                "sale_date": sale_date,
                 "photo_filename": v.photo_filename or '',
                 "days_in_inventory": days_in_inventory
             })
@@ -482,10 +575,10 @@ def inventory():
             if delta > 30:
                 days_in_inventory = "⚠️ Over 30 Days"
 
-        date_added = v.date_added.strftime(
+        sale_date = v.sale_date.strftime(
             "%d-%m-%Y %H:%M:%S") if v.date_added else ""
-        date_sold = v.date_sold.strftime(
-            "%d-%m-%Y %H:%M:%S") if v.date_sold else ""
+        sale_date = v.sale_date.strftime(
+            "%d-%m-%Y %H:%M:%S") if v.sale_date else ""
 
         def format_numeric(val):
             if val is None:
@@ -493,31 +586,43 @@ def inventory():
             sign = '+' if val >= 0 else ''
             return f"{sign}${abs(val):,.2f}"
 
-        purchase_price_str = format_numeric(v.purchase_price)
-        expenses_amount_str = format_numeric(v.expenses_amount)
-        selling_price_str = format_numeric(v.selling_price)
-        profit_str = format_numeric(v.profit)
+        purchase_price = format_numeric(v.purchase_price)
+        expenses_amount = format_numeric(v.expenses_amount)
+        total_paid = db.session.query(db.func.sum(Payment.amount)).filter_by(
+            vehicle_id=v.id).scalar() or 0
+        balance_due = (v.fixed_selling_price or 0) - total_paid
 
-        if v.profit is not None:
-            profits.append(v.profit)
-        if v.selling_price is not None:
-            prices.append(v.selling_price)
+        cost = (v.purchase_price or 0) + (v.expenses_amount or 0)
+        realized_profit = total_paid - cost
+
+        if v.booked_profit is not None:
+            profits.append(float(v.booked_profit) if v.booked_profit else 0)
+        if v.fixed_selling_price is not None:
+            prices.append(float(v.fixed_selling_price)
+                          if v.fixed_selling_price else 0)
 
         row = {
-            'id': v.id,
-            'date_added': date_added,
-            'make': v.make or '',
-            'model': v.model or '',
-            'year': v.year or '',
-            'mileage': v.mileage or '',
-            'status': v.status or '',
-            'purchase_price': purchase_price_str,
-            'expenses_amount': expenses_amount_str,
-            'selling_price': selling_price_str,
-            'profit': profit_str,
-            'date_sold': date_sold,
-            'photo_filename': v.photo_filename or '',
-            'days_in_inventory': days_in_inventory
+            "id": v.id,
+            "date_added": date_added,
+            "make": v.make or '',
+            "model": v.model or '',
+            "year": v.year or '',
+            "registration_number": v.registration_number or '',
+            "mileage": v.mileage or '',
+            "sourced_from": v.sourced_from or '',
+            "sold_to": v.sold_to or '',
+            "notes": v.notes or '',
+            "status": v.status or '',
+            "purchase_price": format_numeric(v.purchase_price),
+            "expenses_amount": format_numeric(v.expenses_amount),
+            "fixed_selling_price": format_numeric(v.fixed_selling_price),
+            "total_paid": format_numeric(total_paid),
+            "balance_due": format_numeric(balance_due),
+            "booked_profit": format_numeric(v.booked_profit),
+            "realized_profit": format_numeric(realized_profit),
+            "sale_date": sale_date,
+            "photo_filename": v.photo_filename or '',
+            "days_in_inventory": days_in_inventory
         }
         rows.append(row)
 
