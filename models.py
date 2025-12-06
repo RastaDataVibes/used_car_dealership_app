@@ -25,21 +25,29 @@ class Inventory(db.Model):
     make = db.Column(db.String(100), nullable=False)
     model = db.Column(db.String(100), nullable=False)
     year = db.Column(db.Integer, nullable=False)
-    purchase_price = db.Column(db.Float, nullable=False)
-    selling_price = db.Column(db.Float)
+    registration_number = db.Column(db.String(50))
+    sourced_from = db.Column(db.String(200))
+    purchase_price = db.Column(db.Float)
+    fixed_selling_price = db.Column(db.Float)
     expenses_amount = db.Column(db.Float, default=0.0)  # total expenses
-    profit = db.Column(db.Float)
+    booked_profit = db.Column(db.Float)
     mileage = db.Column(db.Integer)
     photo_filename = db.Column(db.String(300))  # stores uploaded file name
     status = db.Column(db.String(20), default='Available')
+    sold_to = db.Column(db.String(200))
     date_added = db.Column(db.DateTime)
-    date_sold = db.Column(db.DateTime)
+    sale_date = db.Column(db.DateTime)
+    notes = db.Column(db.Text)
 
     # Relationship to Expenses
     expenses = db.relationship(
         'Expense', backref='vehicle', cascade='all, delete-orphan', lazy=True
     )
 
+    payments = db.relationship(
+        'Payment', backref='vehicle', cascade='all, delete-orphan', lazy=True)
+
+    
     def __repr__(self):
         return f"<Inventory {self.make} {self.model}>"
 
@@ -57,14 +65,15 @@ class Inventory(db.Model):
         return 0.0
 
     # Tweak: Added helper to calculate and update profit and commit
-    def calculate_profit(self):
+    def calculate_booked_profit(self):
         """Helper method to calculate and update profit.
         Call this after setting prices or updating expenses."""
-        if self.purchase_price is not None and self.selling_price is not None:
-            self.profit = self.selling_price - \
-                (self.purchase_price + (self.expenses_amount or 0))
+        if self.purchase_price is not None and self.fixed_selling_price is not None:
+            total_cost = (self.purchase_price or 0) + \
+                (self.expenses_amount or 0)
+            self.booked_profit = self.fixed_selling_price - total_cost
         else:
-            self.profit = None
+            self.booked_profit = None
         db.session.commit()  # Commit the update
 
 
@@ -88,6 +97,29 @@ class Expense(db.Model):
         return f"<Expense {self.expense_category} - {self.expense_amount}>"
 
 
+class Payment(db.Model):
+    __tablename__ = 'payments'
+    __table_args__ = {'extend_existing': True}
+
+    id = db.Column(db.Integer, primary_key=True)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey(
+        'inventory.id'), nullable=False)
+    payment_date = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now())
+    amount = db.Column(db.Float, nullable=False)
+    # e.g. "Installment #1", "Final Payment"
+    category = db.Column(db.String(100), default="Installment")
+    notes = db.Column(db.Text)
+
+    created_at = db.Column(db.DateTime,
+                           nullable=False,
+                           default=lambda: datetime.now(timezone.utc),
+                           server_default=func.now())
+
+
 # ------------------------
 # Automatic behavior for Inventory
 # ------------------------
@@ -107,13 +139,6 @@ def auto_update_inventory(mapper, connection, target):
     if target.purchase_price and not target.date_added:
         target.date_added = datetime.now(timezone.utc)
 
-    # 2️⃣ Update status and date_sold
-    if target.selling_price:
-        target.status = 'Sold'
-        if not target.date_sold:
-            target.date_sold = datetime.now(timezone.utc)
-    else:
-        target.status = 'Available'
-        target.date_sold = None
+    
 
     # Note: Do NOT calculate profit or expenses here; use helpers post-commit
