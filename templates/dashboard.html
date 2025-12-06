@@ -773,9 +773,18 @@
         /* SHORTER: Thumb-friendly */
       }
 
+      .kpi-money {
+        text-align: center;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        height: 100%;
+      }
+
       .kpi-title {
         font-size: 0.9em !important;
-        /* SMALL TITLE */
+
       }
 
       .kpi-value {
@@ -816,7 +825,6 @@
 
     @media (max-width: 480px) {
 
-      /* EXTRA SMALL PHONE */
       .kpi-value {
         font-size: 2em !important;
         /* TINY NUMBERS: Quick glance */
@@ -828,6 +836,60 @@
 
       .topbar {
         padding: 5px;
+      }
+    }
+
+    .kpi-money {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start !important;
+      /* Title at top */
+      align-items: center;
+      text-align: center;
+      height: 100%;
+      width: 100%;
+      padding: 12px 10px 10px 10px;
+      color: white;
+      border-radius: inherit;
+      overflow: hidden;
+    }
+
+    .kpi-money .kpi-title {
+      order: 1 !important;
+      font-size: 1em !important;
+      margin: 0 0 8px 0 !important;
+      font-weight: bold;
+      opacity: 1;
+      width: 100%;
+    }
+
+
+    .kpi-money .kpi-value-normal {
+      order: 2 !important;
+      font-size: 1.5em !important;
+      font-weight: bold;
+      margin: 0;
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    /* Mobile: Smaller numbers for Sales & Profits */
+    @media (max-width: 768px) {
+      .kpi-money .kpi-value-normal {
+        font-size: 1.9em !important;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .kpi-money .kpi-value-normal {
+        font-size: 1.7em !important;
+      }
+
+      .kpi-money .kpi-title {
+        font-size: 0.9em !important;
       }
     }
   </style>
@@ -843,9 +905,15 @@
           <input type="text" name="make" placeholder="Make">
           <input type="text" name="model" placeholder="Model">
           <input type="number" name="year" placeholder="Year">
-          <input type="number" step="0.01" name="purchase_price" placeholder="Purchase Price">
-          <input type="number" step="0.01" name="selling_price" placeholder="Selling Price">
-          <input type="number" name="mileage" placeholder="Mileage">
+          <input type="text" name="registration_number" placeholder="Registration Number">
+          <input type="text" name="sourced_from" placeholder="Sourced From (e.g. John, Copart, Japan)">
+          <input type="text" name="purchase_price" placeholder="Purchase Price" inputmode="numeric"
+            oninput="formatNumberWithCommasLive(this)">
+          <input type="text" name="fixed_selling_price" placeholder="Fixed Selling Price" inputmode="numeric"
+            oninput="formatNumberWithCommasLive(this)">
+          <input type="text" name="mileage" placeholder="Mileage" inputmode="numeric"
+            oninput="formatNumberWithCommasLive(this)">
+          <input type="text" name="notes" placeholder="Notes">
           <input type="file" name="photo" accept="image/*">
           <button type="submit">Add Vehicle</button>
         </form>
@@ -855,7 +923,8 @@
         <form id="addExpenseFormElement">
           <select name="vehicle_id" id="expenseVehicleSelect"></select>
           <input type="text" name="expense_category" placeholder="Expense Category">
-          <input type="number" step="0.01" name="expense_amount" placeholder="Expense Amount">
+          <input type="text" name="expense_amount" placeholder="Expense Amount" inputmode="numeric"
+            oninput="formatNumberWithCommasLive(this)">
           <button type="submit">Add Expense</button>
         </form>
       </div>
@@ -866,11 +935,29 @@
           <input type="text" name="make" placeholder="Make">
           <input type="text" name="model" placeholder="Model">
           <input type="number" name="year" placeholder="Year">
-          <input type="number" step="0.01" name="purchase_price" placeholder="Purchase Price">
-          <input type="number" step="0.01" name="selling_price" placeholder="Selling Price">
-          <input type="number" name="mileage" placeholder="Mileage">
+          <input type="text" name="purchase_price" placeholder="Purchase Price" inputmode="numeric"
+            oninput="formatNumberWithCommasLive(this)">
+          <input type="text" name="fixed_selling_price" placeholder="fixed_Selling Price" inputmode="numeric"
+            oninput="formatNumberWithCommasLive(this)">
+          <input type="text" name="mileage" placeholder="Mileage" inputmode="numeric"
+            oninput="formatNumberWithCommasLive(this)">
           <input type="file" name="photo" accept="image/*">
           <button type="submit">Update Vehicle</button>
+        </form>
+      </div>
+      <button class="sidebar-btn" id="recordSaleBtn">💰 Record Sale</button>
+      <div class="sidebar-form" id="recordSaleForm">
+        <form id="recordSaleFormElement">
+          <select name="vehicle_id" id="recordSaleVehicleSelect" required>
+            <option value="">Select Vehicle</option>
+          </select>
+          <input type="text" name="sold_to" placeholder="Customer Name + Phone" required>
+          <input type="text" name="fixed_selling_price" placeholder="Final Selling Price (once)" inputmode="numeric"
+            oninput="formatNumberWithCommasLive(this)">
+          <input type="text" name="add_installment" placeholder="Installment Amount (today)" inputmode="numeric"
+            oninput="formatNumberWithCommasLive(this)">
+          <input type="text" name="notes" placeholder="Notes (optional)">
+          <button type="submit">Record Sale/Installment</button>
         </form>
       </div>
       <button class="sidebar-btn" id="reportBtn">📈 Report</button>
@@ -945,15 +1032,15 @@
           </div>
         </div>
         <div class="kpi-card blue" id="totalSalesCard">
-          <div class="kpi-big-number">
-            <h3 class="kpi-title">Total sales</h3> <!-- TITLE: Bold top -->
-            <h2 class="kpi-value" id="totalSalesValue">UGX 0</h2> <!-- BIG NUMBER: Center, from SQL sum -->
+          <div class="kpi-money">
+            <h3 class="kpi-title">Total sales(UGX)</h3> <!-- TITLE: Bold top -->
+            <div class="kpi-value-normal" id="totalSalesValue">0</div> <!-- BIG NUMBER: Center, from SQL sum -->
           </div>
         </div>
         <div class="kpi-card purple" id="totalProfitsCard">
-          <div class="kpi-big-number">
-            <h3 class="kpi-title">Total profits</h3> <!-- TITLE: Bold top -->
-            <h2 class="kpi-value" id="totalProfitsValue">UGX 0</h2> <!-- BIG NUMBER: Center, from SQL sum -->
+          <div class="kpi-money">
+            <h3 class="kpi-title">Total profits(UGX)</h3> <!-- TITLE: Bold top -->
+            <div class="kpi-value-normal" id="totalProfitsValue">0</div> <!-- BIG NUMBER: Center, from SQL sum -->
           </div>
         </div>
       </div>
@@ -986,13 +1073,18 @@
                   <th data-sort="make">Make <span class="sort-icon">▲</span></th>
                   <th data-sort="model">Model <span class="sort-icon">▲</span></th>
                   <th data-sort="year">Year <span class="sort-icon">▲</span></th>
+                  <th data-sort="registration_number">Registration Number <span class="sort-icon">▲</span></th>
+                  <th data-sort="sourced_from">Sourced From <span class="sort-icon">▲</span></th>
                   <th data-sort="mileage">Mileage <span class="sort-icon">▲</span></th>
                   <th data-sort="status">Status <span class="sort-icon">▲</span></th>
                   <th data-sort="purchase_price">Purchase Price <span class="sort-icon">▲</span></th>
                   <th data-sort="expenses_amount">Expenses Amount <span class="sort-icon">▲</span></th>
-                  <th data-sort="selling_price">Selling Price <span class="sort-icon">▲</span></th>
-                  <th data-sort="profit">Profit <span class="sort-icon">▲</span></th>
-                  <th data-sort="date_sold">Date Sold <span class="sort-icon">▲</span></th>
+                  <th data-sort="fixed_selling_price">Fixed Selling Price <span class="sort-icon">▲</span></th>
+                  <th data-sort="booked_profit">Booked Profit <span class="sort-icon">▲</span></th>
+                  <th data-sort="balance_due">Balance Due <span class="sort-icon">▲</span></th>
+                  <th data-sort="sale_date">Sale Date <span class="sort-icon">▲</span></th>
+                  <th data-sort="sold_to">Sold To <span class="sort-icon">▲</span></th>
+                  <th data-sort="notes">Notes <span class="sort-icon">▲</span></th>
                   <th data-sort="photo_filename">Photo Filename <span class="sort-icon">▲</span></th>
                   <th data-sort="days_in_inventory">Days in Inventory <span class="sort-icon">▲</span></th>
                 </tr>
@@ -1007,6 +1099,48 @@
     </div>
   </div>
   <script>
+    function formatNumberWithCommasLive(input) {
+      const cursorPos = input.selectionStart;
+      let value = input.value.replace(/,/g, '');
+
+      // Allow only valid number format: digits, optional decimal, optional digits after
+      if (!/^-?\d*\.?\d*$/.test(value)) {
+        // Optionally: remove last invalid char
+        input.value = input.value.slice(0, -1);
+        input.setSelectionRange(cursorPos - 1, cursorPos - 1);
+        return;
+      }
+
+      let [whole, decimal] = value.split('.');
+      whole = whole.replace(/\D/g, '');
+      if (decimal !== undefined) {
+        decimal = decimal.replace(/\D/g, '').slice(0, 2); // max 2 decimals
+      }
+
+      if (whole === '' && decimal === undefined) {
+        input.value = '';
+        return;
+      }
+
+      const formattedWhole = whole === '' ? '0' : Number(whole).toLocaleString('en-US');
+      const formatted = decimal !== undefined ? `${formattedWhole}.${decimal}` : formattedWhole;
+
+      input.value = formatted;
+
+      // Smart cursor positioning
+      const commasBeforeCursor = (input.value.slice(0, cursorPos).match(/,/g) || []).length;
+      const newCommasBeforeCursor = (formatted.slice(0, cursorPos).match(/,/g) || []).length;
+      const newPos = cursorPos + (newCommasBeforeCursor - commasBeforeCursor);
+
+      // If in decimal part, push to end
+      const decimalStart = formatted.indexOf('.') + 1;
+      if (decimalStart > 0 && cursorPos >= decimalStart) {
+        input.setSelectionRange(formatted.length, formatted.length);
+      } else {
+        input.setSelectionRange(newPos, newPos);
+      }
+    }
+
     const backBtn = document.getElementById('back-btn');
     const forwardBtn = document.getElementById('forward-btn');
     backBtn.addEventListener('click', () => { backBtn.classList.add('active'); forwardBtn.classList.remove('active'); });
@@ -1094,12 +1228,14 @@
     const addCarBtn = document.getElementById('addCarBtn'), addCarForm = document.getElementById('addCarForm');
     const addExpenseBtn = document.getElementById('addExpenseBtn'), addExpenseForm = document.getElementById('addExpenseForm');
     const editCarBtn = document.getElementById('editCarBtn'), editCarForm = document.getElementById('editCarForm');
-    addCarBtn.addEventListener('click', () => { addCarForm.classList.toggle('open'); addExpenseForm.classList.remove('open'); editCarForm.classList.remove('open'); });
-    addExpenseBtn.addEventListener('click', () => { addExpenseForm.classList.toggle('open'); addCarForm.classList.remove('open'); editCarForm.classList.remove('open'); });
-    editCarBtn.addEventListener('click', () => { editCarForm.classList.toggle('open'); addCarForm.classList.remove('open'); addExpenseForm.classList.remove('open'); });
+    const recordSaleBtn = document.getElementById('recordSaleBtn'), recordSaleForm = document.getElementById('recordSaleForm');
+    addCarBtn.addEventListener('click', () => { addCarForm.classList.toggle('open'); addExpenseForm.classList.remove('open'); editCarForm.classList.remove('open'); recordSaleForm.classList.remove('open'); });
+    addExpenseBtn.addEventListener('click', () => { addExpenseForm.classList.toggle('open'); addCarForm.classList.remove('open'); editCarForm.classList.remove('open'); recordSaleForm.classList.remove('open'); });
+    editCarBtn.addEventListener('click', () => { editCarForm.classList.toggle('open'); addCarForm.classList.remove('open'); addExpenseForm.classList.remove('open'); recordSaleForm.classList.remove('open'); });
+    recordSaleBtn.addEventListener('click', () => { recordSaleForm.classList.toggle('open'); addCarForm.classList.remove('open'); addExpenseForm.classList.remove('open'); editCarForm.classList.remove('open'); });
     document.addEventListener('click', e => {
-      const openForms = [addCarForm, addExpenseForm, editCarForm];
-      const buttons = [addCarBtn, addExpenseBtn, editCarBtn];
+      const openForms = [addCarForm, addExpenseForm, editCarForm, recordSaleForm];
+      const buttons = [addCarBtn, addExpenseBtn, editCarBtn, recordSaleBtn];
       const clickedInside = openForms.some(f => f.contains(e.target)) || buttons.some(b => b.contains(e.target));
       if (!clickedInside) openForms.forEach(f => f.classList.remove('open'));
     });
@@ -1146,7 +1282,7 @@
     const editCarFormElement = document.getElementById('editCarFormElement');
     const editVehicleSelect = document.getElementById('editVehicleSelect');
     editCarBtn.addEventListener('click', () => { fetchVehicles(editVehicleSelect); });
-    editVehicleSelect.addEventListener('change', async () => { const vid = editVehicleSelect.value; if (!vid) return; const res = await fetch(`/get_vehicle/${vid}`); const data = await res.json(); editCarFormElement.make.value = data.make || ''; editCarFormElement.model.value = data.model || ''; editCarFormElement.year.value = data.year || ''; editCarFormElement.purchase_price.value = data.purchase_price || ''; editCarFormElement.selling_price.value = data.selling_price || ''; editCarFormElement.mileage.value = data.mileage || ''; });
+    editVehicleSelect.addEventListener('change', async () => { const vid = editVehicleSelect.value; if (!vid) return; const res = await fetch(`/get_vehicle/${vid}`); const data = await res.json(); editCarFormElement.make.value = data.make || ''; editCarFormElement.model.value = data.model || ''; editCarFormElement.year.value = data.year || ''; editCarFormElement.purchase_price.value = data.purchase_price || ''; editCarFormElement.selling_price.value = data.fixed_selling_price || ''; editCarFormElement.mileage.value = data.mileage || ''; });
 
     // UPDATED: Form submit with cache invalidation and queued refresh (OPTIMIZATION: Steps 1 & 3)
     editCarFormElement.addEventListener('submit', async e => {
@@ -1157,6 +1293,24 @@
         alert('Vehicle updated!');
         editCarFormElement.reset();
         editCarForm.classList.remove('open');
+        cachedInventory = null;  // Invalidate cache after mutation
+        queueRefresh(true);  // Batch + force refresh
+        fetch('/flush_superset_cache', { method: 'POST' });
+      }
+    });
+
+    const recordSaleFormElement = document.getElementById('recordSaleFormElement');
+    const recordSaleVehicleSelect = document.getElementById('recordSaleVehicleSelect');
+    recordSaleBtn.addEventListener('click', () => { fetchVehicles(recordSaleVehicleSelect); });
+    recordSaleVehicleSelect.addEventListener('change', async () => { const vid = recordSaleVehicleSelect.value; if (!vid) return; const res = await fetch(`/get_vehicle/${vid}`); const data = await res.json(); recordSaleFormElement.sold_to = data.sold_to || ''; recordSaleFormElement.fixed_selling_price.value = data.fixed_selling_price || ''; recordSaleFormElement.add_installment.value = data.add_installment || ''; recordSaleFormElement.notes.value = data.notes || '' })
+    recordSaleFormElement.addEventListener('submit', async e => {
+      e.preventDefault();
+      const formData = new FormData(recordSaleFormElement);
+      const res = await fetch('/record_sale_ajax', { method: 'POST', body: formData });
+      if (res.ok) {
+        alert('Sale recorded!');
+        recordSaleElement.reset();
+        reccordSaleForm.classList.remove('open');
         cachedInventory = null;  // Invalidate cache after mutation
         queueRefresh(true);  // Batch + force refresh
         fetch('/flush_superset_cache', { method: 'POST' });
@@ -1218,13 +1372,18 @@
             <td class="${getNaClass(v.make)}">${formatField(v.make)}</td>
             <td class="${getNaClass(v.model)}">${formatField(v.model)}</td>
             <td class="numeric ${getNaClass(v.year)}">${formatField(v.year)}</td>
+            <td class="${getNaClass(v.registration_number)}">${formatField(v.registration_number)}</td>
+            <td class="${getNaClass(v.sourced_from)}">${formatField(v.sourced_from)}</td>
             <td class="numeric ${getNaClass(v.mileage)}">${formatField(v.mileage)}</td>
             <td class="${getNaClass(v.status)}">${formatField(v.status)}</td>
             <td class="numeric">${getFormattedCurrencyCell(v.purchase_price)}</td>
             <td class="numeric">${getFormattedCurrencyCell(v.expenses_amount)}</td>
-            <td class="numeric">${getFormattedCurrencyCell(v.selling_price)}</td>
-            <td class="numeric">${getFormattedCurrencyCell(v.profit)}</td>
-            <td class="${getNaClass(v.date_sold)}">${formatField(v.date_sold)}</td>
+            <td class="numeric">${getFormattedCurrencyCell(v.fixed_selling_price)}</td>
+            <td class="numeric">${getFormattedCurrencyCell(v.booked_profit)}</td>
+            <td class="numeric">${getFormattedCurrencyCell(v.balance_due)}</td>
+            <td class="${getNaClass(v.sale_date)}">${formatField(v.sale_date)}</td>
+            <td class="${getNaClass(v.sold_to)}">${formatField(v.sold_to)}</td>
+            <td class="${getNaClass(v.notes)}">${formatField(v.notes)}</td>
             <td class="photo-cell">${v.photo_filename ? `<img src="/static/uploads/${v.photo_filename}" alt="${v.photo_filename}" onerror="this.style.display='none'">` : '<span class="na-faint">N/A</span>'}</td>
             <td class="${getNaClass(v.days_in_inventory)}">${formatField(v.days_in_inventory)}</td>
             <td class="delete-cell"><button onclick="deleteCar(${v.id})" style="background: red; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">🗑️ Delete</button></td>
@@ -1266,7 +1425,7 @@
     });
     /* CHANGED: Updated addCellBars to wrap the formatted value in bar-text span within bar-container, ensuring the bar acts as a horizontal extension (length based on value percent) starting from the left vertical grid line (x-axis), spanning the full inner cell height along the horizontal space, mimicking a horizontal bar graph where bar length visually represents magnitude for easy comparison. */
     function addCellBars(maxProfit, maxPrice) {
-      const barCols = [7, 8, 9, 10]; /* purchase, expenses, selling, profit */
+      const barCols = [7, 8, 9, 10, 11, 12, 13]; /* purchase, expenses, selling, profit */
       const isProfitCol = [false, false, false, true];
       document.querySelectorAll('#inventoryTable tbody tr').forEach(tr => {
         barCols.forEach((colIdx, i) => {
@@ -1351,7 +1510,7 @@
             var makeProfits = {};
             data.forEach(function (car) {
               var make = car.make || 'Unknown';
-              var profitStr = car.profit || '';
+              var profitStr = car.booked_profit || '';
               var cleanProfit = profitStr.replace(/UGX |[+$]/g, '').replace(/,/g, '');
               var profit = parseFloat(cleanProfit) || 0;
               makeProfits[make] = (makeProfits[make] || 0) + profit;
@@ -1488,11 +1647,11 @@
         getInventoryData(forceRefresh)
           .then(response => {
             var data = response.formatted_data || [];
-            data = data.filter(car => car.status === 'Sold' && car.date_sold);
+            data = data.filter(car => car.status === 'Sold' && car.sale_date);
 
             var monthlySales = {};
             data.forEach(car => {
-              var date = parseDate(car.date_sold);
+              var date = parseDate(car.sale_date);
               if (!date) return;
               var monthKey = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
               monthlySales[monthKey] = (monthlySales[monthKey] || 0) + 1;
@@ -1708,7 +1867,7 @@
         const soldData = data.filter(car => car.status === 'Sold');
         let totalSales = 0;
         soldData.forEach(car => {
-          let priceStr = (car.selling_price || '0').trim();
+          let priceStr = (car.fixed_selling_price || '0').trim();
           console.log('Raw price for ' + (car.make || 'car') + ': "' + priceStr + '"'); // Spy raw
           priceStr = priceStr.replace(/[ +UGX$-]/g, '').replace(/,/g, ''); // Clean +UGX, commas
           let multiplier = 1;
@@ -1728,12 +1887,12 @@
         let formattedSales = 'UGX 0';
         if (totalSales >= 1000000) {
           const mValue = (totalSales / 1000000).toFixed(2); // "4.04"
-          formattedSales = `UGX ${mValue.replace(/\.?0+$/, '')}M`; // "4.04M" (drops trailing 0s only)
+          formattedSales = `${mValue.replace(/\.?0+$/, '')}M`; // "4.04M" (drops trailing 0s only)
         } else if (totalSales >= 1000) {
           const kValue = (totalSales / 1000).toFixed(0); // "4040K"
-          formattedSales = `UGX ${kValue}K`;
+          formattedSales = `${kValue}K`;
         } else {
-          formattedSales = `UGX ${Math.round(totalSales)}`;
+          formattedSales = `${Math.round(totalSales)}`;
         }
 
         console.log('BLUE SALES SUM: ' + totalSales + ' (formatted: ' + formattedSales + ')');
@@ -1757,7 +1916,7 @@
         const soldData = data.filter(car => car.status === 'Sold');
         let totalProfits = 0;
         soldData.forEach(car => {
-          let profitStr = (car.profit || '0').trim();
+          let profitStr = (car.booked_profit || '0').trim();
           console.log('Raw profit for ' + (car.make || 'car') + ': "' + profitStr + '"'); // Spy raw
           // CLEAN: Strip UGX, +, -, commas
           profitStr = profitStr.replace(/[ +UGX$-]/g, '').replace(/,/g, '');
@@ -1781,12 +1940,12 @@
         const absTotal = Math.abs(totalProfits);
         if (absTotal >= 1000000) {
           const mValue = (absTotal / 1000000).toFixed(2).replace(/\.?0+$/, '');
-          formattedProfits = `UGX ${isPositive ? '+' : '-'}${mValue}M`;
+          formattedProfits = `${isPositive ? '+' : '-'}${mValue}M`;
         } else if (absTotal >= 1000) {
           const kValue = (absTotal / 1000).toFixed(0);
-          formattedProfits = `UGX ${isPositive ? '+' : '-'}${kValue}K`;
+          formattedProfits = `${isPositive ? '+' : '-'}${kValue}K`;
         } else {
-          formattedProfits = `UGX ${isPositive ? '+' : '-'}${Math.round(absTotal)}`;
+          formattedProfits = `${isPositive ? '+' : '-'}${Math.round(absTotal)}`;
         }
 
         console.log('PURPLE PROFITS SUM: ' + totalProfits + ' (formatted: ' + formattedProfits + ')');
@@ -1836,10 +1995,9 @@
       // Open immediately with fallback (unblocks popup)
       const fallbackUrl = 'https://dash-y8xp.onrender.com/superset/dashboard/1/?standalone=true&show_filters=false&native_filters_key=UCkVgPchSNg';
       const win = window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
-
       // Fetch token in background and update URL if successful
       try {
-        const res = await fetch('/superset_token/1');
+        const res = await fetch('/superset_token/1');  // CONNECTION: Fetch auth token from backend
         if (res.ok) {
           const { token } = await res.json();
           const supersetUrl = `https://dash-y8xp.onrender.com/superset/dashboard/1/?standalone=true&show_filters=false&token=${token}&native_filters_key=UCkVgPchSNg`;
@@ -1877,17 +2035,17 @@
       fetch('/api/inventory')
         .then(res => res.json())
         .then(data => {
-          let csv = 'ID,Date Added,Make,Model,Year,Mileage,Status,Purchase Price,Expenses,Selling Price,Profit,Date Sold,Photo,Days in Inventory\n'; // FULL HEADERS
+          let csv = 'ID,Date Added,Make,Model,Year,Registration Number,Mileage,Status,Purchase Price,Expenses,Fixed Selling Price,Profit,Sale Date,Photo,Days in Inventory\n'; // FULL HEADERS
           data.formatted_data.forEach(car => {
             // CLEAN NUMBERS: Strip UGX/+, commas for prices/profit
             const cleanPurchase = parseFloat((car.purchase_price || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '')) || 0;
             const cleanExpenses = parseFloat((car.expenses_amount || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '')) || 0;
-            const cleanSelling = parseFloat((car.selling_price || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '')) || 0;
-            const cleanProfit = parseFloat((car.profit || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '')) || 0;
+            const cleanSelling = parseFloat((car.fixed_selling_price || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '')) || 0;
+            const cleanProfit = parseFloat((car.booked_profit || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '')) || 0;
             const cleanMileage = parseInt(car.mileage || 0) || 0;
             const cleanDays = parseInt(car.days_in_inventory || 0) || 0;
 
-            csv += `"${car.id}","${car.date_added || ''}","${car.make || ''}","${car.model || ''}",${car.year || ''},${cleanMileage},"${car.status || ''}",${cleanPurchase},${cleanExpenses},${cleanSelling},${cleanProfit},"${car.date_sold || ''}","${car.photo_filename || ''}",${cleanDays}\n`;
+            csv += `"${car.id}","${car.date_added || ''}","${car.make || ''}","${car.model || ''}",${car.year || ''},"${car.registration_number || ''}",${cleanMileage},"${car.status || ''}",${cleanPurchase},${cleanExpenses},${cleanSelling},${cleanProfit},"${car.sale_date || ''}","${car.photo_filename || ''}",${cleanDays}\n`;
           });
           const blob = new Blob([csv], { type: 'text/csv' });
           const link = document.createElement('a');
@@ -1904,14 +2062,14 @@
       fetch('/api/inventory')
         .then(res => res.json())
         .then(data => {
-          let csv = 'ID,Make,Model,Year,Mileage,Purchase Price,Selling Price\n'; // HEADERS for available
+          let csv = 'ID,Make,Model,Year,Registration Number,Mileage,Purchase Price,Fixed Selling Price\n'; // HEADERS for available
           const available = data.formatted_data.filter(car => car.status !== 'Sold');
           available.forEach(car => {
             const cleanPurchase = parseFloat((car.purchase_price || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '')) || 0;
-            const cleanSelling = parseFloat((car.selling_price || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '')) || 0;
+            const cleanSelling = parseFloat((car.fixed_selling_price || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '')) || 0;
             const cleanMileage = parseInt(car.mileage || 0) || 0;
 
-            csv += `"${car.id}","${car.make || ''}","${car.model || ''}",${car.year || ''},${cleanMileage},${cleanPurchase},${cleanSelling}\n`;
+            csv += `"${car.id}","${car.make || ''}","${car.model || ''}",${car.year || ''},"${car.registration_number || ''}",${cleanMileage},${cleanPurchase},${cleanSelling}\n`;
           });
           const blob = new Blob([csv], { type: 'text/csv' });
           const link = document.createElement('a');
@@ -1932,10 +2090,10 @@
           let totalSold = 0, totalMoney = 0;
           const sold = data.formatted_data.filter(car => car.status === 'Sold');
           sold.forEach(car => {
-            text += `Sold: ${car.make} ${car.model} for ${car.selling_price} (Profit: ${car.profit})\n`;
+            text += `Sold: ${car.make}  ${car.model} ${car.registration_number} for ${car.fixed_selling_price} (Profit: ${car.booked_profit})\n`;
             totalSold++;
             // FIXED CLEAN: Parse money (strip UGX/+, commas)
-            const moneyStr = (car.selling_price || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '');
+            const moneyStr = (car.fixed_selling_price || '0').replace(/UGX |[+$]/g, '').replace(/,/g, '');
             const money = parseFloat(moneyStr) || 0;
             totalMoney += money;
           });
@@ -2029,26 +2187,97 @@
     window.addEventListener('popstate', updateArrowStates); // Refresh on back/forward
 
     // NEW: Delete Car - Confirm & Call Backend
-    function deleteCar(carId) {
-      if (confirm('Delete this car? No undo!')) {
-        console.log('Deleting car ID ' + carId); // LOG: Check console
-        fetch(`/delete_vehicle/${carId}`, { method: 'DELETE' })
-          .then(res => {
-            if (res.ok) {
-              alert('Car deleted!');
-              cachedInventory = null; // CLEAR MEMORY
-              queueRefresh(true); // FORCE REFRESH: Table/KPIs instant
-              fetch('/flush_superset_cache', { method: 'POST' });
-            } else {
-              alert('Oops, try again!'); // ERROR
-            }
-          })
-          .catch(err => {
-            console.error('Delete error:', err); // LOG
-            alert('Connection error!');
-          });
+    async function deleteCar(carId) {
+      if (!confirm('Delete this car? No undo!')) return;
+
+      // Find the row and delete button
+      const deleteButton = document.querySelector(`button[onclick="deleteCar(${carId})"]`);
+      if (!deleteButton) return;
+
+      const row = deleteButton.closest('tr');
+      if (!row) return;
+
+      // 1. INSTANT UI FEEDBACK
+      row.style.transition = 'opacity 0.3s ease';
+      row.style.opacity = '0.4';                    // Fade out
+      deleteButton.disabled = true;                 // Disable button
+      deleteButton.textContent = 'Deleting...';     // Change button text
+
+      // Optional: Add "Deleting..." text in the last cell
+      const statusCell = row.cells[row.cells.length - 1]; // Delete button cell
+      const deletingText = document.createElement('span');
+      deletingText.textContent = ' (deleting...)';
+      deletingText.style.color = 'orange';
+      deletingText.style.fontStyle = 'italic';
+      statusCell.appendChild(deletingText);
+
+      try {
+        const res = await fetch(`/delete_vehicle/${carId}`, {
+          method: 'DELETE'
+        });
+
+        if (res.ok) {
+          // SUCCESS → Permanently remove row
+          row.remove();
+          showToast('Car deleted successfully!');
+
+          // Invalidate cache and refresh KPIs/table
+          cachedInventory = null;
+          queueRefresh(true);
+          fetch('/flush_superset_cache', { method: 'POST' });
+        } else {
+          throw new Error('Server error');
+        }
+      } catch (err) {
+        // FAILURE → Rollback UI
+        row.style.opacity = '1';
+        deleteButton.disabled = false;
+        deleteButton.textContent = '🗑️ Delete';
+        deletingText.remove();
+
+        showToast('Delete failed — try again');
+        console.error('Delete error:', err);
       }
     }
+
+    function showToast(message, duration = 3000) {
+      const toast = document.createElement('div');
+      toast.textContent = message;
+      toast.style.cssText = `
+        position: fixed;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #10b981;
+        color: white;
+        padding: 14px 28px;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 15px;
+        z-index: 10000;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        animation: toastIn 0.4s ease;
+      `;
+      document.body.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.animation = 'toastOut 0.4s ease forwards';
+        setTimeout(() => toast.remove(), 400);
+      }, duration);
+    }
+
+    // Toast animations
+    const toastStyle = document.createElement('style');
+    toastStyle.textContent = `
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    @keyframes toastOut {
+      to { opacity: 0; transform: translateX(-50%) translateY(20px); }
+    }
+    `;
+    document.head.appendChild(toastStyle);
 
     // INTERACTIVE: Hovers, Clicks, Modal Helpers (Builds on Your Existing)
     document.addEventListener('DOMContentLoaded', () => {
@@ -2141,7 +2370,7 @@
             })
             .catch(err => {
               console.error(err);
-              alert('Network error — submitting normally...');
+              alert('submitted');
               form.submit(); // Fallback
             })
             .finally(() => {
@@ -2156,6 +2385,7 @@
         });
       });
     });
+
   </script>
 </body>
 
