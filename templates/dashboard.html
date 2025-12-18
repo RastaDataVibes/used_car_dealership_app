@@ -995,6 +995,30 @@
         </div>
       </div>
     </div>
+          <button class="sidebar-btn" id="aiAdviserBtn">🤖 AI Adviser</button>
+      <div class="sidebar-form" id="aiAdviserForm">
+        <div style="padding: 15px;">
+          <h4 style="margin: 0 0 12px 0; color: #333; text-align: center; font-size: 16px;">🤖 GreenChain AI Adviser</h4>
+          <p style="font-size: 13px; color: #555; margin: 0 0 15px 0; text-align: center;">
+            Ask me about your cars, profits, or get smart advice!
+          </p>
+
+          <!-- Chat Messages -->
+          <div id="aiChatMessages" style="height: 280px; overflow-y: auto; background: white; border: 1px solid #aaa; border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 14px;">
+            <div style="background:#e0e0e0; padding:8px 12px; border-radius:10px; max-width:92%; margin-bottom:8px;">
+              Hi boss! 👋 I'm your AI adviser.<br>
+              I know all your cars, sales, and profits.<br>
+              Ask me anything!
+            </div>
+          </div>
+
+          <!-- Input + Send -->
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="aiUserInput" placeholder="Type your question..." style="flex:1; padding:10px; border:1px solid #ccc; border-radius:20px; outline:none; font-size:14px;">
+            <button onclick="sendAIMessage()" style="background:#70b583; color:white; border:none; padding:10px 14px; border-radius:20px; cursor:pointer; font-size:14px;">Send</button>
+          </div>
+        </div>
+      </div>
     <div class="main">
       <div class="topbar">
         <div class="top-left">
