@@ -638,75 +638,85 @@ def inventory():
                            max_profit=max_profit,
                            max_price=max_price)
 
-# ==================== FULL ACCESS AI ADVISER — KNOWS EVERYTHING & GIVES SMART TIPS! ====================
+# ==================== FULL AI ADVISER — SEES ALL 3 TABLES! ====================
 @app.route('/api/ai_chat', methods=['POST'])
 def ai_chat():
     data = request.get_json()
     user_message = data.get('message', '').strip()
     
     if not user_message:
-        return jsonify({"reply": "Ask me about your cars! Like 'What's my best seller?' 🚗"})
+        return jsonify({"reply": "Ask me anything about your cars, expenses, or payments! 🚗💸"})
     
-    # Get EVERY car from database — FULL details!
+    # Get ALL data from all 3 tables
     vehicles = Inventory.query.all()
     
-    # Big summary numbers
+    # Summary numbers
     total_cars = len(vehicles)
     sold_cars = len([v for v in vehicles if v.status == 'Sold'])
     available_cars = total_cars - sold_cars
     
     total_sales = sum(clean_float(v.fixed_selling_price or 0) for v in vehicles if v.status == 'Sold')
-    total_cost = sum((clean_float(v.purchase_price or 0) + clean_float(v.expenses_amount or 0)) for v in vehicles)
-    total_profit = total_sales - sum((clean_float(v.purchase_price or 0) + clean_float(v.expenses_amount or 0)) for v in vehicles if v.status == 'Sold')
+    total_profit = sum(clean_float(v.booked_profit or 0) for v in vehicles if v.status == 'Sold')
     
-    # FULL list of EVERY car — with ALL details!
-    car_list = []
+    # FULL details for EVERY car — including expenses and payments!
+    car_details = []
     for v in vehicles:
-        days = "New"
-        if v.date_added:
-            days = (date.today() - v.date_added.date()).days
-            days = f"{days} days old"
+        # Expenses list
+        expenses_list = []
+        for exp in v.expenses:  # This gets all expenses for this car
+            expenses_list.append(f"   - {exp.expense_category}: UGX {clean_float(exp.expense_amount):,.0f} (on {exp.date_created.strftime('%d-%m-%Y') if exp.date_created else 'N/A'})")
+        expenses_text = "\n".join(expenses_list) if expenses_list else "   - No expenses"
+        
+        # Payments list
+        payments_list = []
+        total_paid = 0
+        for pay in v.payments:  # This gets all payments/installments
+            amount = clean_float(pay.amount or 0)
+            total_paid += amount
+            payments_list.append(f"   - Installment #{pay.id}: UGX {amount:,.0f} ({pay.notes or 'No note'}) on {pay.date_created.strftime('%d-%m-%Y') if pay.date_created else 'N/A'}")
+        payments_text = "\n".join(payments_list) if payments_list else "   - No payments yet"
+        
+        balance_due = clean_float(v.fixed_selling_price or 0) - total_paid
+        
+        days_in_stock = (date.today() - v.date_added.date()).days if v.date_added else "Unknown"
         
         status = "Sold" if v.status == 'Sold' else "Available"
-        balance_due = clean_float(v.fixed_selling_price or 0) - sum(clean_float(p.amount or 0) for p in v.payments)
-        loss_risk = clean_float(v.purchase_price or 0) + clean_float(v.expenses_amount or 0) - clean_float(v.fixed_selling_price or 0)
         
-        car_list.append(
-            f"• ID: {v.id} | {v.make or 'Unknown'} {v.model or ''} {v.year or ''} "
-            f"Reg: {v.registration_number or 'None'} | Sourced from: {v.sourced_from or 'None'} | "
-            f"Status: {status} | Sold to: {v.sold_to or 'None'} | "
-            f"Buy price: UGX {clean_float(v.purchase_price):,.0f} | Expenses: UGX {clean_float(v.expenses_amount):,.0f} | "
-            f"Sell price: UGX {clean_float(v.fixed_selling_price):,.0f} | Profit: UGX {clean_float(v.booked_profit):,.0f} | "
-            f"Balance due: UGX {balance_due:,.0f} | Risk of loss: UGX {loss_risk:,.0f} if not sold | "
-            f"Mileage: {v.mileage or 'N/A'} km | Date added: {v.date_added.strftime('%d-%m-%Y') if v.date_added else 'N/A'} | "
-            f"Sale date: {v.sale_date.strftime('%d-%m-%Y') if v.sale_date else 'N/A'} | "
-            f"Notes: {v.notes or 'None'} | In stock: {days}"
-        )
+        car_details.append(f"""
+• Car ID: {v.id} | {v.make or 'Unknown'} {v.model or ''} {v.year or ''} (Reg: {v.registration_number or 'None'})
+  Status: {status} | Sold to: {v.sold_to or 'None'}
+  Buy price: UGX {clean_float(v.purchase_price):,.0f} | Sell price: UGX {clean_float(v.fixed_selling_price):,.0f}
+  Booked profit: UGX {clean_float(v.booked_profit):,.0f} | Balance due: UGX {balance_due:,.0f}
+  Mileage: {v.mileage or 'N/A'} km | Days in stock: {days_in_stock}
+  Notes: {v.notes or 'None'}
+  Expenses ({clean_float(v.expenses_amount):,.0f} total):
+{expenses_text}
+  Payments (UGX {total_paid:,.0f} paid so far):
+{payments_text}
+""")
     
-    cars_text = "\n".join(car_list)  # EVERY car — full power!
+    all_cars_text = "\n".join(car_details)
     
     system_prompt = f"""
-You are GreenChain AI — the super smart ADVISER for this Ugandan used car dealership.
+You are GreenChain AI — the super smart adviser for this Ugandan car dealership.
 
-REAL DATA FROM TODAY (December 18, 2025):
+TODAY'S REAL DATA (December 18, 2025):
 - Total cars: {total_cars}
 - Available: {available_cars}
 - Sold: {sold_cars}
-- Total sales: UGX {total_sales:,.0f}
+- Total sales income: UGX {total_sales:,.0f}
 - Total profit: UGX {total_profit:,.0f}
 
-EVERY SINGLE CAR (full details):
-{cars_text}
+FULL DETAILS OF EVERY CAR (including all expenses and payments):
+{all_cars_text}
 
-YOUR JOB AS ADVISER:
-- Answer ANY question using ONLY this real data.
-- Be a helpful friend: Give tips like "Sell this Toyota for UGX X to avoid loss — it's been {days} days!"
-- Warn about losses: "This car costs more than sell price — risk UGX {loss_risk} loss if not fixed!"
-- Suggest prices: "Based on your data, Toyotas sell for average UGX Y — price this one at UGX Z to make profit."
-- Tell stories: "Your top seller is Toyota with UGX P profit. But watch the old Honda — it's losing value!"
-- Analyze daily: "Today, check these 3 cars over 60 days."
-- Be short, fun, and pro. Use UGX with commas (2,500,000).
-- If question needs math (averages, totals), calculate it right.
+YOUR JOB:
+- Use ONLY this real data from all 3 tables.
+- Answer questions about individual expenses, payments, installments, balance due, etc.
+- Give smart advice: "This customer still owes UGX X", "This car has high expenses — watch profit"
+- Be friendly, clear, and professional.
+- Use UGX with commas (2,500,000).
+- Calculate anything needed (total paid, remaining, etc.).
 """
 
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -718,15 +728,15 @@ YOUR JOB AS ADVISER:
                 {"role": "user", "content": user_message}
             ],
             model="llama-3.1-70b-versatile",
-            temperature=0.6,  # Smarter advice
-            max_tokens=1000   # Longer stories if needed
+            temperature=0.6,
+            max_tokens=1200
         )
         
         reply = chat_response.choices[0].message.content.strip()
         return jsonify({"reply": reply})
     
     except Exception as e:
-        return jsonify({"reply": "Robot is checking data... ask again soon! 😊"})
+        return jsonify({"reply": "Robot is loading data... ask again in 5 seconds! 😊"})
 # ==========================================================================
 
 # ------------------------
