@@ -638,19 +638,17 @@ def inventory():
                            max_profit=max_profit,
                            max_price=max_price)
 
-# ==================== FULL AI ADVISER — SEES ALL 3 TABLES! ====================
+# ==================== FINAL AI — LISTS EVERY PAYMENT & EVERY EXPENSE! ====================
 @app.route('/api/ai_chat', methods=['POST'])
 def ai_chat():
     data = request.get_json()
     user_message = data.get('message', '').strip()
     
     if not user_message:
-        return jsonify({"reply": "Ask me anything about your cars, expenses, or payments! 🚗💸"})
+        return jsonify({"reply": "Ask me about cars, payments, expenses, or advice! 🚗💸"})
     
-    # Get ALL data from all 3 tables
     vehicles = Inventory.query.all()
     
-    # Summary numbers
     total_cars = len(vehicles)
     sold_cars = len([v for v in vehicles if v.status == 'Sold'])
     available_cars = total_cars - sold_cars
@@ -658,65 +656,70 @@ def ai_chat():
     total_sales = sum(clean_float(v.fixed_selling_price or 0) for v in vehicles if v.status == 'Sold')
     total_profit = sum(clean_float(v.booked_profit or 0) for v in vehicles if v.status == 'Sold')
     
-    # FULL details for EVERY car — including expenses and payments!
     car_details = []
     for v in vehicles:
-        # Expenses list
-        expenses_list = []
-        for exp in v.expenses:  # This gets all expenses for this car
-            expenses_list.append(f"   - {exp.expense_category}: UGX {clean_float(exp.expense_amount):,.0f} (on {exp.date_created.strftime('%d-%m-%Y') if exp.date_created else 'N/A'})")
-        expenses_text = "\n".join(expenses_list) if expenses_list else "   - No expenses"
+        status = "Sold" if v.status == 'Sold' else "Available"
         
-        # Payments list
+        # === EVERY PAYMENT ===
         payments_list = []
         total_paid = 0
-        for pay in v.payments:  # This gets all payments/installments
+        for pay in v.payments.order_by(Payment.date_created):
             amount = clean_float(pay.amount or 0)
             total_paid += amount
-            payments_list.append(f"   - Installment #{pay.id}: UGX {amount:,.0f} ({pay.notes or 'No note'}) on {pay.date_created.strftime('%d-%m-%Y') if pay.date_created else 'N/A'}")
-        payments_text = "\n".join(payments_list) if payments_list else "   - No payments yet"
+            date_str = pay.date_created.strftime('%d %B %Y') if pay.date_created else 'Unknown date'
+            note = pay.notes or 'No note'
+            payments_list.append(f"   → UGX {amount:,.0f} on {date_str} ({note})")
+        payments_text = "\n".join(payments_list) if payments_list else "   → No payments yet"
+        
+        # === EVERY EXPENSE ===
+        expenses_list = []
+        total_expenses = 0
+        for exp in v.expenses.order_by(Expense.date_created):
+            amount = clean_float(exp.expense_amount or 0)
+            total_expenses += amount
+            date_str = exp.date_created.strftime('%d %B %Y') if exp.date_created else 'Unknown date'
+            category = exp.expense_category or 'Unknown category'
+            expenses_list.append(f"   → {category}: UGX {amount:,.0f} on {date_str}")
+        expenses_text = "\n".join(expenses_list) if expenses_list else "   → No expenses recorded"
         
         balance_due = clean_float(v.fixed_selling_price or 0) - total_paid
         
         days_in_stock = (date.today() - v.date_added.date()).days if v.date_added else "Unknown"
         
-        status = "Sold" if v.status == 'Sold' else "Available"
-        
         car_details.append(f"""
 • Car ID: {v.id} | {v.make or 'Unknown'} {v.model or ''} {v.year or ''} (Reg: {v.registration_number or 'None'})
   Status: {status} | Sold to: {v.sold_to or 'None'}
   Buy price: UGX {clean_float(v.purchase_price):,.0f} | Sell price: UGX {clean_float(v.fixed_selling_price):,.0f}
-  Booked profit: UGX {clean_float(v.booked_profit):,.0f} | Balance due: UGX {balance_due:,.0f}
-  Mileage: {v.mileage or 'N/A'} km | Days in stock: {days_in_stock}
+  Booked profit: UGX {clean_float(v.booked_profit):,.0f}
+  Total paid: UGX {total_paid:,.0f} | Balance due: UGX {balance_due:,.0f}
+  Days in stock: {days_in_stock} | Mileage: {v.mileage or 'N/A'} km
   Notes: {v.notes or 'None'}
-  Expenses ({clean_float(v.expenses_amount):,.0f} total):
-{expenses_text}
-  Payments (UGX {total_paid:,.0f} paid so far):
+
+  Payments:
 {payments_text}
+
+  Expenses (Total: UGX {total_expenses:,.0f}):
+{expenses_text}
 """)
     
     all_cars_text = "\n".join(car_details)
     
     system_prompt = f"""
-You are GreenChain AI — the super smart adviser for this Ugandan car dealership.
+You are GreenChain AI — expert adviser for this Ugandan car dealership.
 
-TODAY'S REAL DATA (December 18, 2025):
-- Total cars: {total_cars}
-- Available: {available_cars}
-- Sold: {sold_cars}
-- Total sales income: UGX {total_sales:,.0f}
-- Total profit: UGX {total_profit:,.0f}
+REAL DATA TODAY (December 18, 2025):
+- Total cars: {total_cars} | Available: {available_cars} | Sold: {sold_cars}
+- Total sales: UGX {total_sales:,.0f} | Total profit: UGX {total_profit:,.0f}
 
-FULL DETAILS OF EVERY CAR (including all expenses and payments):
+EVERY CAR WITH FULL PAYMENTS & EXPENSES:
 {all_cars_text}
 
 YOUR JOB:
-- Use ONLY this real data from all 3 tables.
-- Answer questions about individual expenses, payments, installments, balance due, etc.
-- Give smart advice: "This customer still owes UGX X", "This car has high expenses — watch profit"
-- Be friendly, clear, and professional.
-- Use UGX with commas (2,500,000).
-- Calculate anything needed (total paid, remaining, etc.).
+- List exact payments and expenses with dates when asked
+- Example: "The Toyota has these expenses: Brakes UGX 3M on 10 Dec, Suspension UGX 2.5M..."
+- Show totals and balance clearly
+- Give smart advice: "High expenses on this car — profit low", "Customer paying well"
+- Be friendly, clear, use full dates (13 December 2025)
 """
 
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -729,14 +732,12 @@ YOUR JOB:
             ],
             model="llama-3.1-70b-versatile",
             temperature=0.6,
-            max_tokens=1200
+            max_tokens=1500  # Longer for full lists
         )
-        
         reply = chat_response.choices[0].message.content.strip()
         return jsonify({"reply": reply})
-    
     except Exception as e:
-        return jsonify({"reply": "Robot is loading data... ask again in 5 seconds! 😊"})
+        return jsonify({"reply": "Robot loading all data... try again! 😊"})
 # ==========================================================================
 
 # ------------------------
