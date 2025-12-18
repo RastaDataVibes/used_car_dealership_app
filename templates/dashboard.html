@@ -995,7 +995,7 @@
         </div>
       </div>
     </div>
-          <button class="sidebar-btn" id="aiAdviserBtn">🤖 AI Adviser</button>
+    <button class="sidebar-btn" id="aiAdviserBtn">🤖 AI Adviser</button>
       <div class="sidebar-form" id="aiAdviserForm">
         <div style="padding: 15px;">
           <h4 style="margin: 0 0 12px 0; color: #333; text-align: center; font-size: 16px;">🤖 GreenChain AI Adviser</h4>
@@ -2411,6 +2411,77 @@
     });
 
   </script>
+  <script>
+  // Open/close AI panel — same as other buttons
+  document.getElementById('aiAdviserBtn').addEventListener('click', function(e) {
+    e.stopPropagation(); // Stop click from closing it immediately
+    const aiForm = document.getElementById('aiAdviserForm');
+    aiForm.classList.toggle('open');
+
+    // Close all other sidebar forms
+    ['addCarForm', 'addExpenseForm', 'editCarForm', 'recordSaleForm', 'reportForm', 'settingsForm'].forEach(id => {
+      const form = document.getElementById(id);
+      if (form && form !== aiForm) {
+        form.classList.remove('open');
+      }
+    });
+  });
+
+  // Send message to AI
+  async function sendAIMessage() {
+    const input = document.getElementById('aiUserInput');
+    const message = input.value.trim();
+    if (!message) return;
+
+    addMessageToChat(message, 'user');
+    input.value = '';
+
+    const thinking = addMessageToChat('Thinking...', 'ai', true);
+
+    try {
+      const res = await fetch('/api/ai_chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: message })
+      });
+      const data = await res.json();
+      thinking.remove();
+      addMessageToChat(data.reply || "Try again!", 'ai');
+    } catch (err) {
+      thinking.remove();
+      addMessageToChat("No connection. Check later! 😴", 'ai');
+    }
+  }
+
+  // Create chat bubble
+  function addMessageToChat(text, sender, isThinking = false) {
+    const container = document.getElementById('aiChatMessages');
+    const bubble = document.createElement('div');
+    bubble.style.cssText = `
+      max-width: 92%;
+      padding: 8px 12px;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      word-wrap: break-word;
+      font-size: 14px;
+      ${sender === 'user' 
+        ? 'background:#70b583; color:white; align-self:flex-end; margin-left:auto;' 
+        : 'background:#e0e0e0; color:black; align-self:flex-start;'}
+    `;
+    if (isThinking) bubble.style.fontStyle = 'italic';
+    bubble.innerHTML = text.replace(/\n/g, '<br>');
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+    return bubble;
+  }
+
+  // Send with Enter key
+  document.getElementById('aiUserInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      sendAIMessage();
+    }
+  });
+</script>
 </body>
 
 </html>
