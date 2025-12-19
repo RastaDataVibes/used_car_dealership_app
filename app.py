@@ -638,14 +638,14 @@ def inventory():
                            max_profit=max_profit,
                            max_price=max_price)
 
-# ==================== FINAL AI — LISTS EVERY PAYMENT & EVERY EXPENSE! ====================
+# ==================== BEST AI — USES v.expenses AND v.payments DIRECTLY! ====================
 @app.route('/api/ai_chat', methods=['POST'])
 def ai_chat():
     data = request.get_json()
     user_message = data.get('message', '').strip()
     
     if not user_message:
-        return jsonify({"reply": "Ask me about cars, payments, expenses, or advice! 🚗💸"})
+        return jsonify({"reply": "Ask me about cars, expenses, payments, or advice! 🚗💸"})
     
     vehicles = Inventory.query.all()
     
@@ -660,27 +660,27 @@ def ai_chat():
     for v in vehicles:
         status = "Sold" if v.status == 'Sold' else "Available"
         
-        # === EVERY PAYMENT ===
-        payments_list = []
-        total_paid = 0
-        for pay in v.payments.order_by(Payment.date_created):
-            amount = clean_float(pay.amount or 0)
-            total_paid += amount
-            date_str = pay.date_created.strftime('%d %B %Y') if pay.date_created else 'Unknown date'
-            note = pay.notes or 'No note'
-            payments_list.append(f"   → UGX {amount:,.0f} on {date_str} ({note})")
-        payments_text = "\n".join(payments_list) if payments_list else "   → No payments yet"
-        
-        # === EVERY EXPENSE ===
+        # EVERY EXPENSE — category, amount, date
         expenses_list = []
         total_expenses = 0
         for exp in v.expenses.order_by(Expense.date_created):
             amount = clean_float(exp.expense_amount or 0)
             total_expenses += amount
             date_str = exp.date_created.strftime('%d %B %Y') if exp.date_created else 'Unknown date'
-            category = exp.expense_category or 'Unknown category'
+            category = exp.expense_category or 'Unknown'
             expenses_list.append(f"   → {category}: UGX {amount:,.0f} on {date_str}")
-        expenses_text = "\n".join(expenses_list) if expenses_list else "   → No expenses recorded"
+        expenses_text = "\n".join(expenses_list) if expenses_list else "   → No expenses"
+        
+        # EVERY PAYMENT — amount, date, note
+        payments_list = []
+        total_paid = 0
+        for pay in v.payments.order_by(Payment.payment_date):
+            amount = clean_float(pay.amount or 0)
+            total_paid += amount
+            date_str = pay.payment_date.strftime('%d %B %Y') if pay.payment_date else 'Unknown date'
+            note = pay.notes or pay.category or 'No note'
+            payments_list.append(f"   → UGX {amount:,.0f} on {date_str} ({note})")
+        payments_text = "\n".join(payments_list) if payments_list else "   → No payments"
         
         balance_due = clean_float(v.fixed_selling_price or 0) - total_paid
         
@@ -695,11 +695,11 @@ def ai_chat():
   Days in stock: {days_in_stock} | Mileage: {v.mileage or 'N/A'} km
   Notes: {v.notes or 'None'}
 
-  Payments:
-{payments_text}
-
   Expenses (Total: UGX {total_expenses:,.0f}):
 {expenses_text}
+
+  Payments:
+{payments_text}
 """)
     
     all_cars_text = "\n".join(car_details)
@@ -711,15 +711,15 @@ REAL DATA TODAY (December 18, 2025):
 - Total cars: {total_cars} | Available: {available_cars} | Sold: {sold_cars}
 - Total sales: UGX {total_sales:,.0f} | Total profit: UGX {total_profit:,.0f}
 
-EVERY CAR WITH FULL PAYMENTS & EXPENSES:
+EVERY CAR WITH FULL EXPENSES & PAYMENTS:
 {all_cars_text}
 
 YOUR JOB:
-- List exact payments and expenses with dates when asked
-- Example: "The Toyota has these expenses: Brakes UGX 3M on 10 Dec, Suspension UGX 2.5M..."
+- List exact expenses and payments with dates and categories when asked
+- Example: "Brakes: UGX 3,000,000 on 10 December 2025"
 - Show totals and balance clearly
-- Give smart advice: "High expenses on this car — profit low", "Customer paying well"
-- Be friendly, clear, use full dates (13 December 2025)
+- Give smart advice: "High expenses on this car", "Customer paying well"
+- Be friendly and clear. Use full dates.
 """
 
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -732,14 +732,13 @@ YOUR JOB:
             ],
             model="llama-3.1-70b-versatile",
             temperature=0.6,
-            max_tokens=1500  # Longer for full lists
+            max_tokens=1500
         )
         reply = chat_response.choices[0].message.content.strip()
         return jsonify({"reply": reply})
     except Exception as e:
-        return jsonify({"reply": "Robot loading all data... try again! 😊"})
+        return jsonify({"reply": "Robot loading data... try again! 😊"})
 # ==========================================================================
-
 # ------------------------
 # Run app
 # ------------------------
