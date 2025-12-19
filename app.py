@@ -662,7 +662,7 @@ def ai_chat():
         # EVERY EXPENSE — category, amount, date
         expenses_list = []
         total_expenses = 0
-        for exp in v.expenses.order_by(Expense.date_created):
+        for exp in sorted(v.expenses, key=lambda e: e.date_created or datetime.min):
             amount = clean_float(exp.expense_amount or 0)
             total_expenses += amount
             date_str = exp.date_created.strftime('%d %B %Y') if exp.date_created else 'Unknown date'
@@ -673,7 +673,7 @@ def ai_chat():
         # EVERY PAYMENT — amount, date, note
         payments_list = []
         total_paid = 0
-        for pay in v.payments.order_by(Payment.payment_date):
+        for pay in sorted(v.payments, key=lambda p: p.payment_date or datetime.min):
             amount = clean_float(pay.amount or 0)
             total_paid += amount
             date_str = pay.payment_date.strftime('%d %B %Y') if pay.payment_date else 'Unknown date'
@@ -734,7 +734,7 @@ YOUR JOB:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
             ],
-            model="llama-3.1-70b-versatile",
+            model="llama3-70b-8192",
             temperature=0.6,
             max_tokens=1500
         )
