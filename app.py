@@ -27,7 +27,6 @@ from datetime import datetime, timezone, date
 from dashboard_view import dashboard_bp
 # Tweak: Uncommented/ensured import for models
 from models import Inventory, Expense, Payment
-from flask import jsonify, request
 from groq import Groq
 
 def clean_float(value):
