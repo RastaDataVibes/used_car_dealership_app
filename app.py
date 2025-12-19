@@ -724,6 +724,11 @@ YOUR JOB:
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
     
     try:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            return jsonify({"reply": "ERROR: GROQ_API_KEY is missing in Render Environment! Add it and redeploy."})
+        print(f"Using Groq key: {api_key[:5]}...")  # Logs first 5 chars to check
+        client = Groq(api_key=api_key)
         chat_response = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -735,8 +740,11 @@ YOUR JOB:
         )
         reply = chat_response.choices[0].message.content.strip()
         return jsonify({"reply": reply})
+    except ImportError as e:
+        return jsonify({"reply": "IMPORT ERROR: groq library not installed — check requirements.txt and redeploy with clear cache!"})
     except Exception as e:
-        return jsonify({"reply": "Robot loading data... try again! 😊"})
+        error_msg = str(e)
+        return jsonify({"reply": f"CRASH: {error_msg} — check Render logs for details!"})
 # ==========================================================================
 # ------------------------
 # Run app
